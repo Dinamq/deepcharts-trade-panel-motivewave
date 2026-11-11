@@ -19,6 +19,12 @@
 
 <p align="center">
   <a href="https://github.com/Dinamq/deepcharts-trade-panel-motivewave/releases/latest/download/TradePanelDeepCharts.jar"><img src="https://img.shields.io/badge/%E2%AC%87%20Download-TradePanelDeepCharts.jar-2ea043?style=for-the-badge" alt="Download TradePanelDeepCharts.jar"></a>
+  &nbsp;
+  <a href="https://discord.gg/VeEJzJRCRb"><img src="https://img.shields.io/badge/Discord-Join%20TRADERPATH-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the TRADERPATH Discord"></a>
+</p>
+
+<p align="center">
+  💬 <b>Questions, ideas or bugs?</b> Join the <a href="https://discord.gg/VeEJzJRCRb"><b>TRADERPATH community on Discord</b></a>: support, updates and other traders using the panel.
 </p>
 
 <p align="center"><sub>
@@ -112,6 +118,12 @@ The tests (`test/java/com/tradepanel/EngineTest.java`, 300+ checks) run the orde
 - The MotiveWave SDK has no native stop-limit, MIT or server-side OCO orders. STP LMT entries, MIT targets, trailing and the OCO between stop and target are managed by the panel, so MotiveWave must stay open.
 - Tested offline against a simulated broker. Check it on a simulated account with your broker before trading live.
 
+## 💬 Community
+
+Support, new versions and feedback in the **TRADERPATH** Discord:
+
+<a href="https://discord.gg/VeEJzJRCRb"><img src="https://img.shields.io/badge/Discord-discord.gg%2FVeEJzJRCRb-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="discord.gg/VeEJzJRCRb"></a>
+
 ## 👤 Author
 
 Made by **Dinamq** (Gonzaliito). Released under the [MIT License](LICENSE).
@@ -128,6 +140,8 @@ Made by **Dinamq** (Gonzaliito). Released under the [MIT License](LICENSE).
 3. Añade la estrategia **Trade Panel (DeepCharts)** a un gráfico y pulsa **Activate**.
 
 El idioma se cambia en los ajustes de la estrategia (*Idioma / Language*). No está afiliado a DeepCharts ni a MotiveWave. Operar con productos apalancados conlleva un riesgo importante: pruébalo antes en una cuenta simulada.
+
+Comunidad en Discord (soporte, novedades y otros traders): [TRADERPATH](https://discord.gg/VeEJzJRCRb).
 
 Autor: **Dinamq** (Gonzaliito).
 
