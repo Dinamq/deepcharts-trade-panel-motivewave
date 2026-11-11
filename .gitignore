@@ -1,0 +1,15 @@
+# build output
+build/
+*.jar
+
+# portable JDK downloaded by build.ps1
+.jdk26/
+.jdk26_temp/
+jdk26.zip
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+Thumbs.db
+.DS_Store
