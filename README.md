@@ -1,56 +1,88 @@
-# MotiveWave Trade Panel
+<p align="center">
+  <img src="docs/img/banner.png" alt="DeepCharts Trade Panel in MotiveWave" width="100%">
+</p>
 
-A floating trading panel and on-chart order management for [MotiveWave](https://www.motivewave.com/), built with the MotiveWave SDK. Its layout and workflow are modelled on the trading panel of DeepCharts.
+<h1 align="center">DeepCharts Trade Panel in MotiveWave</h1>
 
-> **Not affiliated** with MotiveWave or DeepCharts. Trading futures and other leveraged products involves substantial risk. This software is provided as is, without warranty (see [LICENSE](LICENSE)). Test it on a simulated account first.
+<p align="center">
+  <b>The DeepCharts trading panel, inside MotiveWave: same buttons, same order labels, same workflow.</b>
+</p>
 
-The interface is available in **English** (default) and **Spanish** (*Idioma / Language* in the strategy settings).
+<p align="center">
+  <a href="https://github.com/Dinamq/deepcharts-trade-panel-motivewave/releases/latest"><img src="https://img.shields.io/github/v/release/Dinamq/deepcharts-trade-panel-motivewave?style=flat-square&color=2ea043&label=release" alt="Release"></a>
+  <a href="https://github.com/Dinamq/deepcharts-trade-panel-motivewave/releases"><img src="https://img.shields.io/github/downloads/Dinamq/deepcharts-trade-panel-motivewave/total?style=flat-square&color=2ea043" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Dinamq/deepcharts-trade-panel-motivewave?style=flat-square&color=6a25b3" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/MotiveWave-SDK-6a25b3?style=flat-square" alt="MotiveWave SDK">
+  <img src="https://img.shields.io/badge/Java-JavaFX-ff7f0e?style=flat-square" alt="Java / JavaFX">
+  <img src="https://img.shields.io/badge/language-EN%20%7C%20ES-555?style=flat-square" alt="English / Spanish">
+</p>
 
-![Panel](docs/img/panel.png)
+<p align="center">
+  <a href="https://github.com/Dinamq/deepcharts-trade-panel-motivewave/releases/latest/download/TradePanelDeepCharts.jar"><img src="https://img.shields.io/badge/%E2%AC%87%20Download-TradePanelDeepCharts.jar-2ea043?style=for-the-badge" alt="Download TradePanelDeepCharts.jar"></a>
+</p>
 
-## Features
+<p align="center"><sub>
+  Not affiliated with, endorsed by or connected to DeepCharts or MotiveWave. All trademarks belong to their owners.<br>
+  Trading futures and other leveraged products involves substantial risk. Test on a simulated account first.
+</sub></p>
 
-**Entries**
-- MKT, BID/ASK (with an optional tick offset), LMT, STP and STP LMT. STP LMT is emulated on the client, because the SDK has no stop-limit order.
-- Price-based orders: press the button, then click the price on the chart. Esc, a right click or a click on the orange banner cancels the placement.
-- Quantity modes:
-  - **Qty**: fixed quantity.
-  - **Risk**: mark the stop on the chart; the quantity comes from the SL risk (money or % of balance).
-  - **Averaging**: add to a position with a total-risk budget (against) or a % of the profit the stops lock in (in favor).
+---
 
-**Exits (OCO)**
-- **SL/TP mode**: stop and target in ticks, points, money, R:R or % of the initial or current balance.
-- **Exit strategies**, structured like MotiveWave's Exit Strategies:
-  - named strategies, with offsets in ticks or % of price;
-  - optional risk-based sizing (fixed amount or % of account) and break even;
-  - a table of steps, each with its % of the quantity, a stop (Stop / Trail / MIT) and a target (Limit / MIT).
-- **Server / Client**: in Server mode the stop of an LMT entry is sent to the broker together with it.
-- Auto breakeven, trailing stop with a draggable *Trail. Trigger* line, and a breakeven button.
+## 🧭 Works like DeepCharts
 
-**On the chart**
-- DeepCharts-style order labels with the quantity, the money at the order's price and SL / TP / TS / X buttons. Drag a label to move an order; drag the SL or TP button to place an exit.
-- Each entry gets a number (1, 2, 3…) shared with its SL and TP.
-- Exits at the same price are merged into one line, either by dropping one on another (snaps within a few pixels) or by placing them there. Drag the line's #N button to split them again, last one in first out.
-- Configurable labels:
-  - the position can show its R multiple and its risk;
-  - SL/TP lines can show their amount in money, %, ticks or points, and their R.
-- Errors (orders not sent, broker rejections…) show for a few seconds in a red box at the top of the chart.
-- Link pending orders (one fills, the others are cancelled), turn loose exit orders into an OCO, Cancel all, Cancel and Flat.
+If you trade with DeepCharts, you already know how to use it. The panel and the chart behave like the original DeepCharts trading panel:
 
-![Exit strategy](docs/img/exit-strategy.png)
+- **Same panel:** BUY / SELL columns with MKT, BID / ASK, LMT, STP and STP LMT, Cancel, BE, Cancel and Flat, OCO Strategy with Mode, SL. / TP., BE. / Trail. and Server / Client.
+- **Same order placement:** press LMT, STP or STP LMT and click the price on the chart. Esc or a right click cancels.
+- **Same order labels:** `Subm | -3 LMT | ⚯C | 600.00 $` with the SL / TP / X buttons and the price tag on the axis. Drag a label to move the order; drag its SL or TP button to place an exit.
+- **Same OCO logic:** internal (`Int`) exits are sent when the entry fills, and when one exit fills the other is cancelled. In Server mode the stop of an LMT entry goes to the broker with it.
+- **Partial exits** like DeepCharts' Multi mode: exit strategies with several stops and targets, organised like MotiveWave's Exit Strategies.
 
-![Chart labels](docs/img/chart.png)
+## 🚀 Quick start
 
-## Installation
+1. **Download** [`TradePanelDeepCharts.jar`](https://github.com/Dinamq/deepcharts-trade-panel-motivewave/releases/latest/download/TradePanelDeepCharts.jar).
+2. **Copy** it to `%USERPROFILE%\MotiveWave Extensions` and restart MotiveWave.
+3. **Add** the strategy **Trade Panel (DeepCharts)** to a chart (menu *MotiveWave Custom*) and press **Activate**. The panel appears; the **PANEL** button at the top right of the chart shows or hides it.
 
-1. Download `TradePanelDeepCharts.jar` from the [Releases](../../releases) page, or build it yourself (see below).
-2. Copy it to `%USERPROFILE%\MotiveWave Extensions` and restart MotiveWave.
-3. Add the strategy **Trade Panel (DeepCharts)** to a chart (menu *MotiveWave Custom*) and press **Activate**. The panel appears; the **PANEL** button at the top right of the chart shows or hides it.
+The language (English by default, or Spanish) and the label options are in the strategy settings.
 
-## Building
+## ✨ Features
+
+<table>
+<tr>
+<td width="62%" valign="top">
+
+| | |
+|---|---|
+| 🟢 **Entries** | MKT, BID / ASK with a tick offset, LMT, STP and STP LMT (emulated on the client). Click-to-place on the chart. |
+| 🎯 **OCO exits** | Stop and target in ticks, points, money, R:R or % of the initial / current balance. |
+| 🧩 **Exit strategies** | Named strategies with steps. Each step has its % of the quantity, a stop (Stop / Trail / MIT) and a target (Limit / MIT). Optional risk sizing and break even. |
+| ⚖️ **Risk sizing** | **Risk** mode: mark the stop and the quantity comes from your risk. **Averaging** mode: add with a total-risk budget or a % of the locked-in profit. |
+| 🛡️ **Breakeven & trailing** | BE button, auto BE, and a trailing stop with a draggable *Trail. Trigger* line. |
+| 🔗 **Order management** | Link pending orders, turn loose exits into an OCO, Cancel all, Cancel and Flat. |
+| 🏷️ **Chart labels** | Entry numbers shared with their SL / TP. Exits at the same price are merged into one line and split again with #N. Optional R multiple and risk in money, %, ticks or points. |
+| 🚨 **Errors on the chart** | Orders not sent and broker rejections appear for a few seconds in a red box. |
+| 🌐 **Languages** | English and Spanish. |
+
+</td>
+<td width="38%" valign="top" align="center">
+<img src="docs/img/panel.png" alt="Trade Panel" width="236">
+</td>
+</tr>
+</table>
+
+### 🏷️ Order labels on the chart
+
+<p align="center"><img src="docs/img/chart.png" alt="Order labels on the chart" width="90%"></p>
+
+### 🧩 Exit strategies
+
+<p align="center"><img src="docs/img/exit-strategy.png" alt="Exit strategy editor" width="70%"></p>
+
+## 🛠️ Building from source
 
 Requirements:
-- Windows with MotiveWave installed in `C:\Program Files (x86)\MotiveWave`. The SDK and JavaFX jars are taken from there.
+- Windows with MotiveWave in `C:\Program Files (x86)\MotiveWave`. The SDK and JavaFX jars are taken from there.
 - PowerShell. `build.ps1` downloads a portable JDK 26 the first time if it can't find one.
 
 ```powershell
@@ -59,9 +91,10 @@ Requirements:
 .\build.ps1 -NoInstall  # only build the jar
 ```
 
-The tests (`test/java/com/tradepanel/EngineTest.java`) run the order engine against a simulated broker, with no MotiveWave needed.
+The tests (`test/java/com/tradepanel/EngineTest.java`, 300+ checks) run the order engine against a simulated broker, without MotiveWave.
 
-## Project layout
+<details>
+<summary><b>Project layout</b></summary>
 
 | File | What it does |
 |---|---|
@@ -72,19 +105,30 @@ The tests (`test/java/com/tradepanel/EngineTest.java`) run the order engine agai
 | `Config.java` | Panel values and exit strategies, saved in the user preferences |
 | `T.java` | English / Spanish texts |
 
-## Author
+</details>
 
-Made by **Dinamq** (Gonzaliito).
+## ⚠️ Limitations
 
-## Limitations
+- The MotiveWave SDK has no native stop-limit, MIT or server-side OCO orders. STP LMT entries, MIT targets, trailing and the OCO between stop and target are managed by the panel, so MotiveWave must stay open.
+- Tested offline against a simulated broker. Check it on a simulated account with your broker before trading live.
 
-- The SDK has no native stop-limit, MIT or server-side OCO orders. STP LMT entries, MIT targets, trailing and the OCO between stop and target are managed by the panel, so MotiveWave must stay open.
-- Tested offline with a simulated broker. Check it on a simulated account with your broker before trading live.
+## 👤 Author
+
+Made by **Dinamq** (Gonzaliito). Released under the [MIT License](LICENSE).
 
 ---
 
-### Español
+<details>
+<summary><b>🇪🇸 Español</b></summary>
 
-Panel de trading flotante y gestión de órdenes desde el gráfico para MotiveWave, al estilo del panel de DeepCharts. El idioma se elige en los ajustes de la estrategia (*Idioma / Language*). Para instalarlo, copia `TradePanelDeepCharts.jar` en `%USERPROFILE%\MotiveWave Extensions`, reinicia MotiveWave y añade la estrategia **Trade Panel (DeepCharts)** a un gráfico. Operar con productos apalancados conlleva un riesgo importante: pruébalo antes en una cuenta simulada.
+**DeepCharts Trade Panel in MotiveWave**: el panel de trading de DeepCharts dentro de MotiveWave, con los mismos botones, las mismas etiquetas de órdenes y la misma forma de trabajar.
+
+1. Descarga [`TradePanelDeepCharts.jar`](https://github.com/Dinamq/deepcharts-trade-panel-motivewave/releases/latest/download/TradePanelDeepCharts.jar).
+2. Cópialo en `%USERPROFILE%\MotiveWave Extensions` y reinicia MotiveWave.
+3. Añade la estrategia **Trade Panel (DeepCharts)** a un gráfico y pulsa **Activate**.
+
+El idioma se cambia en los ajustes de la estrategia (*Idioma / Language*). No está afiliado a DeepCharts ni a MotiveWave. Operar con productos apalancados conlleva un riesgo importante: pruébalo antes en una cuenta simulada.
 
 Autor: **Dinamq** (Gonzaliito).
+
+</details>
