@@ -48,9 +48,23 @@ If you trade with DeepCharts, you already know how to use it. The panel and the 
 
 1. **Download** [`TradePanelDeepCharts.jar`](https://github.com/Dinamq/deepcharts-trade-panel-motivewave/releases/latest/download/TradePanelDeepCharts.jar).
 2. **Copy** it to `%USERPROFILE%\MotiveWave Extensions` and restart MotiveWave.
-3. **Add** the strategy **Trade Panel (DeepCharts)** to a chart (menu *MotiveWave Custom*) and press **Activate**. The panel appears; the **PANEL** button at the top right of the chart shows or hides it.
+3. **Add** the strategy **Trade Panel (DeepCharts)** to a chart (menu *MotiveWave Custom*) and press **Activate**. The panel appears; the **DEEPCHARTS** button at the bottom right of the chart shows or hides it.
 
 The language (English by default, or Spanish) and the label options are in the strategy settings.
+
+### 🪟 Several charts of the same instrument
+
+Add the Trade Panel to every chart where you want to see and manage your orders, but press **Activate** on **one** of them only.
+
+- The chart you activated places and manages the orders: its **DEEPCHARTS** button shows a 🟢 green dot.
+- The other charts of the same instrument become mirrors (🔵 blue dot). They show the same order lines, and you can place, drag and cancel orders from them, all through the activated chart.
+- This also works with Cross Trade: for example, a chart of NQ that trades MNQ.
+- Charts activated on different accounts work independently.
+- If the panel title shows **"inactive: press Activate"**, the strategy is not active on any chart.
+
+### 🔁 Copy trading
+
+MotiveWave rejects orders from strategies on *Trade Copier* accounts. Instead, activate the Trade Panel on your **lead account** and copy it to the other accounts with an external copier, such as your broker's or Rithmic's.
 
 ## ✨ Features
 
@@ -116,6 +130,8 @@ The tests (`test/java/com/tradepanel/EngineTest.java`, 300+ checks) run the orde
 ## ⚠️ Limitations
 
 - The MotiveWave SDK has no native stop-limit, MIT or server-side OCO orders. STP LMT entries, MIT targets, trailing and the OCO between stop and target are managed by the panel, so MotiveWave must stay open.
+- MotiveWave does not keep strategies in the workspace: after a restart, add the Trade Panel to your charts again.
+- When the strategy is deactivated or switched to another account, MotiveWave cancels its working orders. The position is closed according to the strategy's *Close on Deactivate* option.
 - Tested offline against a simulated broker. Check it on a simulated account with your broker before trading live.
 
 ## 💬 Community

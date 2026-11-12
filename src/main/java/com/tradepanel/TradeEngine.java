@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -86,6 +87,8 @@ final class TradeEngine {
     private ExecutorService ownExec;
     private volatile OrderContext ctx;
     private volatile Host host;
+    /** Otros gráficos del mismo activo que muestran (y manejan) este motor: se repintan con cada cambio. */
+    private final Set<Host> viewers = new CopyOnWriteArraySet<>();
     private volatile Object owner;
     private volatile String symbol = "—";
 
@@ -247,10 +250,38 @@ final class TradeEngine {
     // ------------------------------------------------------------------
 
     void bind(OrderContext c, Host h, Object who) {
+        Object acct = account(c);
         this.host = h; this.owner = who; this.ctx = c;
         Instrument in = c != null ? c.getInstrument() : null;
         if (in != null) { symbol = String.valueOf(in.getSymbol()); lastPrice = in.getLastPrice(); }
-        run(() -> { });
+        run(() -> {
+            // la cuenta con la que se ha activado se muestra ya (sin esperar a la primera orden)
+            String name = accountName(acct);
+            if (name != null) account = name;
+            Object prev = boundAccount;
+            if (acct != null && prev != null && prev != acct && !prev.equals(acct)) {
+                // activada con otra cuenta: lo de la anterior ni se muestra ni se gestiona (sus órdenes siguen en el bróker)
+                brackets.clear(); pendingPx.clear(); engineCancels.clear();
+                armed = null; pick = null; hover = null; splitB = null;
+                setStatus(T.t("Cuenta cambiada a ") + (name != null ? name : "?") + T.t(": las órdenes de la otra cuenta ya no se muestran aquí"));
+            }
+            if (acct != null) boundAccount = acct;
+        });
+    }
+
+    /** Cuenta con la que se activó por última vez (para notar el cambio de cuenta). */
+    private Object boundAccount;
+
+    /** Nombre visible de la cuenta interna de MotiveWave, o null. */
+    private static String accountName(Object acct) {
+        if (acct == null) return null;
+        for (String m : new String[]{"getDisplayName", "getAccountName", "getAccountID"}) {
+            try {
+                Object v = acct.getClass().getMethod(m).invoke(acct);
+                if (v instanceof String && !((String) v).isBlank()) return ((String) v).trim();
+            } catch (Throwable ignore) { }
+        }
+        return null;
     }
 
     void unbind(Object who) {
@@ -987,7 +1018,29 @@ final class TradeEngine {
      * guarda el saldo inicial: se localiza por reflexión el método del OrderContext que la devuelve.
      */
     double autoInitialBalance(OrderContext c) {
-        if (c == null) return Double.NaN;
+        Object acct = account(c);
+        if (acct == null) return Double.NaN;
+        for (String n : new String[]{"getInitialCashBalance", "getInitialAccountValue"}) {
+            try {
+                Object v = acct.getClass().getMethod(n).invoke(acct);
+                if (v instanceof Number && ((Number) v).doubleValue() > 0) return ((Number) v).doubleValue();
+            } catch (Throwable ignore) { }
+        }
+        return Double.NaN;
+    }
+
+    /**
+     * ¿Ese contexto de órdenes usa la misma cuenta que el de este motor? Con varios gráficos del mismo
+     * activo, solo se comparte el motor si operan la misma cuenta. Si no se puede saber, se da por igual.
+     */
+    boolean sameAccount(OrderContext other) {
+        Object a = account(ctx), b = account(other);
+        return a == null || b == null || a == b || a.equals(b);
+    }
+
+    /** Cuenta interna de MotiveWave del contexto de órdenes (el SDK no la da), o null. */
+    private synchronized Object account(OrderContext c) {
+        if (c == null) return null;
         try {
             if (acctClass != c.getClass()) {
                 acctClass = c.getClass();
@@ -1002,17 +1055,8 @@ final class TradeEngine {
                     }
                 }
             }
-            if (acctMethod == null) return Double.NaN;
-            Object acct = acctMethod.invoke(c);
-            if (acct == null) return Double.NaN;
-            for (String n : new String[]{"getInitialCashBalance", "getInitialAccountValue"}) {
-                try {
-                    Object v = acct.getClass().getMethod(n).invoke(acct);
-                    if (v instanceof Number && ((Number) v).doubleValue() > 0) return ((Number) v).doubleValue();
-                } catch (Throwable ignore) { }
-            }
-        } catch (Throwable ignore) { }
-        return Double.NaN;
+            return acctMethod == null ? null : acctMethod.invoke(c);
+        } catch (Throwable ignore) { return null; }
     }
 
     /**
@@ -2341,7 +2385,12 @@ final class TradeEngine {
         snap = buildSnapshot(c, a);
         Host h = host;
         if (h != null) { try { h.redraw(); } catch (Throwable ignore) { } }
+        for (Host v : viewers) { try { v.redraw(); } catch (Throwable ignore) { } }
     }
+
+    /** Otro gráfico del mismo activo empieza a mostrar este motor. */
+    void addViewer(Host v) { if (v != null && viewers.add(v)) refresh(); }
+    void removeViewer(Host v) { viewers.remove(v); }
 
     /** Clave de agrupación del SL/TP que se está colocando a mano (botón SL/TP o stop del modo Risk). */
     private String placingKey(OrderContext c, Armed a) {

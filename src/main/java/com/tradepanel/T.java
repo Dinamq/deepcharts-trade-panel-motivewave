@@ -46,6 +46,9 @@ final class T {
 
     static {
         M.put(" paso", " step");
+        M.put("Cuenta cambiada a ", "Account changed to ");
+        M.put(": las órdenes de la otra cuenta ya no se muestran aquí", ": orders of the other account are no longer shown here");
+        M.put("· inactiva: pulsa Activate", "· inactive: press Activate");
         M.put("riesgo ", "risk ");
         M.put("Línea de posición", "Position line");
         M.put("Mostrar R", "Show R");
@@ -75,7 +78,7 @@ final class T {
         M.put("Puntos", "Points");
         M.put("% Inicial", "% Initial");
         M.put("% Actual", "% Current");
-        M.put("Ocultar (se reabre con el botón PANEL del gráfico)", "Hide (reopen it with the chart's PANEL button)");
+        M.put("Ocultar (se reabre con el botón DEEPCHARTS del gráfico)", "Hide (reopen it with the chart's DEEPCHARTS button)");
         M.put("Instrumento del gráfico donde está activa la estrategia", "Instrument of the chart where the strategy is active");
         M.put("Saldo", "Balance");
         M.put("Qty: cantidad fija.\n", "Qty: fixed quantity.\n");

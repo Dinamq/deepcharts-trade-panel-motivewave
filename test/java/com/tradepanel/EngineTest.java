@@ -1197,6 +1197,26 @@ public final class EngineTest {
             check("sin stops no hay riesgo ni R", !f.line("POS").money.contains("R") && !f.line("POS").money.contains("riesgo"));
         });
 
+        test("varios gráficos del mismo activo: el espejo se repinta y opera con el mismo motor", () -> {
+            Env e = new Env(100f);
+            int[] mirrorRedraws = {0};
+            TradeEngine.Host mirror = new TradeEngine.Host() {
+                @Override public void redraw() { mirrorRedraws[0]++; }
+                @Override public void log(String msg) { }
+            };
+            e.eng.addViewer(mirror);
+            int before = mirrorRedraws[0];
+            e.eng.cfg.qty = 1;
+            e.eng.arm(true, TradeEngine.Kind.LIMIT);           // pulsado en el panel
+            e.eng.chartClick(98f, false, false, false);        // clic en el gráfico espejo: es el mismo motor
+            check("la orden sale una sola vez", e.sim.orders.size() == 1);
+            check("el gráfico espejo se repinta con cada cambio", mirrorRedraws[0] > before);
+            e.eng.removeViewer(mirror);
+            int after = mirrorRedraws[0];
+            e.eng.cancelAll();
+            eq("al quitarlo deja de repintarse", after, mirrorRedraws[0]);
+        });
+
         test("idioma inglés: mensajes, vistas previas, resúmenes y números", () -> {
             T.en = true;
             try {

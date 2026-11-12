@@ -152,6 +152,14 @@ final class PanelWindow {
     private static void escFilter(Window w) {
         if (w == null || escWindows.containsKey(w)) return;
         escWindows.put(w, Boolean.TRUE);
+        // ratón: mientras se coloca una orden, el clic sobre el gráfico va al panel aunque otro indicador lo tape
+        w.addEventFilter(javafx.scene.input.MouseEvent.ANY, ev -> {
+            try { if (TradePanelStrategy.fxMouse(ev)) ev.consume(); } catch (RuntimeException ignore) { }
+        });
+        // y el menú contextual de ese clic derecho tampoco sale (el clic derecho ya canceló la colocación)
+        w.addEventFilter(javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, ev -> {
+            if (System.currentTimeMillis() - TradePanelStrategy.lastCancelMs < 600) ev.consume();
+        });
         w.addEventFilter(KeyEvent.KEY_PRESSED, ev -> {
             if (ev.getCode() != KeyCode.ESCAPE) return;
             boolean any = false;
@@ -212,6 +220,7 @@ final class PanelWindow {
 
     // cabecera
     private final Label lblSymbol = label("—", "tp-val");
+    private final Label lblInactive = label(T.t("· inactiva: pulsa Activate"), "tp-inactive");
     private final Label lblSaldo = label("0,00 $", "tp-val");
     private final InfoRow rowQty = new InfoRow(T.t("Cant. abierta"));
     private final InfoRow rowOpen = new InfoRow(T.t("P/L abierto"));
@@ -308,12 +317,13 @@ final class PanelWindow {
 
     private Node titleBar() {
         Label t = label("Trade Panel", "tp-title-text");
+        lblInactive.setVisible(false); lblInactive.setManaged(false);
         Region sp = new Region();
         HBox.setHgrow(sp, Priority.ALWAYS);
         Label x = label("✕", "tp-close");
         x.setOnMouseClicked(ev -> stage.hide());
-        Tooltip.install(x, new Tooltip(T.t("Ocultar (se reabre con el botón PANEL del gráfico)")));
-        HBox bar = new HBox(t, sp, x);
+        Tooltip.install(x, new Tooltip(T.t("Ocultar (se reabre con el botón DEEPCHARTS del gráfico)")));
+        HBox bar = new HBox(6, t, lblInactive, sp, x);
         bar.getStyleClass().add("tp-title");
         bar.setAlignment(Pos.CENTER_LEFT);
         final double[] d = new double[2];
@@ -866,6 +876,8 @@ final class PanelWindow {
         if (e == null) return;
         PanelSnapshot s = e.snapshot();
         lblSymbol.setText(s.symbol);
+        // sin estrategia activa los botones no hacen nada: se avisa en la barra de título
+        lblInactive.setVisible(!s.active); lblInactive.setManaged(!s.active);
         lblSaldo.setText(TradeEngine.money(s.balance));
         rowQty.set(Integer.toString(s.openQty), s.openQty);
         rowOpen.set(TradeEngine.money(s.openPnl), s.openQty == 0 ? 0 : s.openPnl);
@@ -1212,6 +1224,7 @@ final class PanelWindow {
         ".tp-root { -fx-background-color: #151518; -fx-border-color: #2c2c33; -fx-border-width: 1; -fx-font-family: 'Segoe UI'; -fx-font-size: 12px; }",
         ".tp-title { -fx-background-color: #0f0f11; -fx-padding: 2 0 2 8; -fx-cursor: move; }",
         ".tp-title-text { -fx-text-fill: #7d7d88; -fx-font-size: 11px; }",
+        ".tp-inactive { -fx-text-fill: #ff8c1a; -fx-font-size: 11px; -fx-font-weight: bold; }",
         ".tp-close { -fx-text-fill: #7d7d88; -fx-font-size: 11px; -fx-padding: 1 8 1 8; -fx-cursor: hand; }",
         ".tp-close:hover { -fx-text-fill: white; -fx-background-color: #c42b1c; }",
         ".tp-body { -fx-padding: 6 8 8 8; }",
