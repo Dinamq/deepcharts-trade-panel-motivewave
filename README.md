@@ -34,6 +34,18 @@
 
 ---
 
+## 🆕 What's new in v1.0.2
+
+- 🔀 **Switch instruments from the panel:** the instrument dropdown now works. Activate the Trade Panel once on each instrument's chart and switch between them from the dropdown, or just click on a chart: the panel follows it, as in DeepCharts.
+- 🎯 **Exact risk in Risk mode:** the stop snaps to the price where the calculated contracts risk exactly your SL amount (for example 1500 $ instead of 1360 $). It can be turned off in the settings.
+- 📅 **Daily P/L that survives a restart:** it comes from the account's trade history for today, so it no longer goes back to 0 when you deactivate and activate the strategy.
+- ✂️ **Easier splitting of merged exits:** click a number of the badge (`2•3•1`) to choose which exit the #N button takes out. Dropping it back on the group merges it again.
+- 🛡️ **BE button offset, easier to find:** the setting that places the BE a few ticks in profit is now called *BE button: ticks in favor from the entry (BE offset)* (settings → Orders).
+- 🖱️ **Dropdowns react on the first click,** even when another menu is open.
+- 💾 **Qty / Risk / Averaging is remembered** when you change the mode.
+- 🔵 **Split-screen charts** of the same instrument show up as mirrors (blue dot). A chart activated on another account says so on the chart.
+- 🏷️ **Version** shown in the strategy settings (*About*).
+
 ## 🧭 Works like DeepCharts
 
 If you trade with DeepCharts, you already know how to use it. The panel and the chart behave like the original DeepCharts trading panel:
@@ -62,6 +74,15 @@ Add the Trade Panel to every chart where you want to see and manage your orders,
 - Charts activated on different accounts work independently.
 - If the panel title shows **"inactive: press Activate"**, the strategy is not active on any chart.
 
+### 🔀 Several instruments
+
+Activate the Trade Panel once on a chart of each instrument (for example NQ and ES). There is one panel window for all of them:
+
+- **Click on a chart** and the panel switches to that instrument, as in DeepCharts.
+- Or pick the instrument in the panel's **instrument dropdown**.
+- Deactivating one instrument switches the panel to another one that is still active.
+- MotiveWave doesn't let an extension change a chart's instrument. If you change the symbol of a chart where the Trade Panel is active, it keeps trading the previous one and shows a notice: press **Deactivate** and **Activate** to trade the new one.
+
 ### 🔁 Copy trading
 
 MotiveWave rejects orders from strategies on *Trade Copier* accounts. Instead, activate the Trade Panel on your **lead account** and copy it to the other accounts with an external copier, such as your broker's or Rithmic's.
@@ -77,9 +98,11 @@ MotiveWave rejects orders from strategies on *Trade Copier* accounts. Instead, a
 | 🟢 **Entries** | MKT, BID / ASK with a tick offset, LMT, STP and STP LMT (emulated on the client). Click-to-place on the chart. |
 | 🎯 **OCO exits** | Stop and target in ticks, points, money, R:R or % of the initial / current balance. |
 | 🧩 **Exit strategies** | Named strategies with steps. Each step has its % of the quantity, a stop (Stop / Trail / MIT) and a target (Limit / MIT). Optional risk sizing and break even. |
-| ⚖️ **Risk sizing** | **Risk** mode: mark the stop and the quantity comes from your risk. **Averaging** mode: add with a total-risk budget or a % of the locked-in profit. |
+| ⚖️ **Risk sizing** | **Risk** mode: mark the stop and the quantity comes from your risk. The stop then snaps to the price where exactly that amount is at risk (optional). **Averaging** mode: add with a total-risk budget or a % of the locked-in profit. |
 | 🛡️ **Breakeven & trailing** | BE button, auto BE, and a trailing stop with a draggable *Trail. Trigger* line. |
 | 🔗 **Order management** | Link pending orders, turn loose exits into an OCO, Cancel all, Cancel and Flat. |
+| 🔀 **Several instruments** | One panel for all your charts: it follows the chart you click, or pick the instrument in its dropdown. |
+| 📅 **Daily P/L** | Today's realized P/L for the account and instrument, read from MotiveWave's trade history. |
 | 🏷️ **Chart labels** | Entry numbers shared with their SL / TP. Exits at the same price are merged into one line and split again with #N. Optional R multiple and risk in money, %, ticks or points. |
 | 🚨 **Errors on the chart** | Orders not sent and broker rejections appear for a few seconds in a red box. |
 | 🌐 **Languages** | English and Spanish. |
@@ -111,7 +134,7 @@ Requirements:
 .\build.ps1 -NoInstall  # only build the jar
 ```
 
-The tests (`test/java/com/tradepanel/EngineTest.java`, 300+ checks) run the order engine against a simulated broker, without MotiveWave.
+The tests (`test/java/com/tradepanel/EngineTest.java`, 350+ checks) run the order engine against a simulated broker, without MotiveWave.
 
 <details>
 <summary><b>Project layout</b></summary>
@@ -130,7 +153,8 @@ The tests (`test/java/com/tradepanel/EngineTest.java`, 300+ checks) run the orde
 ## ⚠️ Limitations
 
 - The MotiveWave SDK has no native stop-limit, MIT or server-side OCO orders. STP LMT entries, MIT targets, trailing and the OCO between stop and target are managed by the panel, so MotiveWave must stay open.
-- MotiveWave does not keep strategies in the workspace: after a restart, add the Trade Panel to your charts again.
+- MotiveWave keeps the Trade Panel on your charts after a restart, but it never activates strategies automatically: press **Activate** again.
+- MotiveWave doesn't let an extension change a chart's instrument: the dropdown switches between the charts where the Trade Panel is active.
 - When the strategy is deactivated or switched to another account, MotiveWave cancels its working orders. The position is closed according to the strategy's *Close on Deactivate* option.
 - Tested offline against a simulated broker. Check it on a simulated account with your broker before trading live.
 
@@ -154,6 +178,8 @@ Made by **Dinamq** (Gonzaliito). Released under the [MIT License](LICENSE).
 1. Descarga [`TradePanelDeepCharts.jar`](https://github.com/Dinamq/deepcharts-trade-panel-motivewave/releases/latest/download/TradePanelDeepCharts.jar).
 2. Cópialo en `%USERPROFILE%\MotiveWave Extensions` y reinicia MotiveWave.
 3. Añade la estrategia **Trade Panel (DeepCharts)** a un gráfico y pulsa **Activate**.
+
+Novedades de la v1.0.2: el desplegable del activo cambia entre los gráficos con el Trade Panel activado (y el panel sigue al gráfico en el que pulsas), el modo Risk pone el stop donde se arriesga justo el importe, el P/L diario sale del historial de la cuenta y no se pierde al reactivar, se elige qué salida separar pulsando su número, el ajuste para desplazar el BE unos ticks a favor tiene un nombre más claro y los desplegables responden al primer clic.
 
 El idioma se cambia en los ajustes de la estrategia (*Idioma / Language*). No está afiliado a DeepCharts ni a MotiveWave. Operar con productos apalancados conlleva un riesgo importante: pruébalo antes en una cuenta simulada.
 

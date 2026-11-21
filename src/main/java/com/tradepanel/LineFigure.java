@@ -27,11 +27,12 @@ import com.motivewave.platform.sdk.draw.ResizePoint;
 final class LineFigure extends Figure {
 
     static final Font FONT = new Font("Segoe UI", Font.PLAIN, 11);
-    private static final FontMetrics FM;
+    private static final FontMetrics FM, BFM;
     static {
         BufferedImage img = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         FM = g.getFontMetrics(FONT);
+        BFM = g.getFontMetrics(FONT.deriveFont(Font.BOLD));
         g.dispose();
     }
 
@@ -90,6 +91,8 @@ final class LineFigure extends Figure {
     private volatile Rectangle[] btnRects = new Rectangle[0];
     private volatile Rectangle rightX;
     private volatile Rectangle tag;
+    private volatile Rectangle[] badgeRects = new Rectangle[0];   // cada número de un grupo ("1·3"): se puede pulsar
+    private volatile String[] badgeTokens = new String[0];
     private volatile int y;
     private volatile String priceText = "";
 
@@ -110,6 +113,14 @@ final class LineFigure extends Figure {
     }
 
     /** Botón bajo el punto ("SL", "TP", "TS", "X") o null. */
+    /** Número del grupo pulsado en la insignia ("1·3"), o null. */
+    String badgeHit(Point p) {
+        Rectangle[] rs = badgeRects;
+        String[] ts = badgeTokens;
+        for (int i = 0; i < rs.length && i < ts.length; i++) if (rs[i].contains(p)) return ts[i];
+        return null;
+    }
+
     String hit(Point p) {
         LineModel mm = m;
         if (mm == null) return null;
@@ -184,6 +195,7 @@ final class LineFigure extends Figure {
         int top = y - H / 2;
 
         int w = (mm.draggable ? GRIP : PAD) + badgeW(mm, fm) + fm.stringWidth(mm.text) + PAD;
+        layoutBadge(mm, x + (mm.draggable ? GRIP : PAD), top, fm, BFM);
         if (mm.linked) w += fm.stringWidth(" | ") + LINK_W + fm.stringWidth("C");
         if (mm.money != null) w += fm.stringWidth(" | " + mm.money);
         label = new Rectangle(x, top, w, H);
@@ -248,6 +260,20 @@ final class LineFigure extends Figure {
                 g.setFont(BADGE_FONT);
                 FontMetrics bf = g.getFontMetrics();
                 g.drawString(mm.badge, tx + (bw - bf.stringWidth(mm.badge)) / 2, base);
+                if (mm.badgeSel != null) {
+                    // el número elegido para separar: invertido (fondo del color de la línea, texto blanco)
+                    layoutBadge(mm, tx, l.y, fm, bf);
+                    Rectangle[] br = badgeRects;
+                    String[] ts = badgeTokens;
+                    for (int i = 0; i < br.length; i++) {
+                        if (!ts[i].equals(mm.badgeSel)) continue;
+                        g.setColor(col);
+                        int half = bf.stringWidth("·") / 2 + 1, tw = bf.stringWidth(ts[i]);
+                        g.fillRoundRect(br[i].x + half - 2, l.y + 3, tw + 4, H - 6, 4, 4);
+                        g.setColor(Color.WHITE);
+                        g.drawString(ts[i], br[i].x + half, base);
+                    }
+                }
                 g.setFont(FONT);
                 tx += bw + BADGE_GAP;
             }
@@ -285,6 +311,22 @@ final class LineFigure extends Figure {
     private static final int BADGE_GAP = 5;
 
     /** Ancho de la insignia con el número (más su separación), 0 si no tiene. */
+    /** Zonas de cada número de la insignia de un grupo ("1·3·2"); vacías si no es un grupo. */
+    private void layoutBadge(LineModel mm, int x0, int top, FontMetrics fm, FontMetrics bf) {
+        if (mm.badge == null || mm.badge.indexOf('\u00b7') < 0) { badgeRects = new Rectangle[0]; badgeTokens = new String[0]; return; }
+        String[] ts = mm.badge.split("\u00b7");
+        int bw = badgeW(mm, fm) - BADGE_GAP;
+        int cur = x0 + (bw - bf.stringWidth(mm.badge)) / 2, dot = bf.stringWidth("\u00b7");
+        Rectangle[] rs = new Rectangle[ts.length];
+        for (int i = 0; i < ts.length; i++) {
+            int tw = bf.stringWidth(ts[i]);
+            rs[i] = new Rectangle(cur - dot / 2 - 1, top, tw + dot + 2, H);   // zona de clic: hasta la mitad de los puntos de al lado
+            cur += tw + dot;
+        }
+        badgeTokens = ts;
+        badgeRects = rs;
+    }
+
     private static int badgeW(LineModel mm, FontMetrics fm) {
         if (mm.badge == null) return 0;
         return Math.max(H - 2, fm.stringWidth(mm.badge) + 9) + BADGE_GAP;

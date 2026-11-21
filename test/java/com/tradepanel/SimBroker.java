@@ -31,6 +31,7 @@ final class SimBroker {
     final List<SimOrder> orders = new ArrayList<>();
     final List<String> log = new ArrayList<>();
     TradeEngine engine;
+    String symbol = "MNQ-TEST";
     final OrderContext ctx;
     final Instrument instrument;
 
@@ -193,7 +194,7 @@ final class SimBroker {
     private InvocationHandler instrumentHandler() {
         return (proxy, m, a) -> {
             switch (m.getName()) {
-                case "getSymbol": return "MNQ-TEST";
+                case "getSymbol": return symbol;
                 case "getTickSize": return tick;
                 case "getPointValue": return pointValue;
                 case "getLastPrice": return last;

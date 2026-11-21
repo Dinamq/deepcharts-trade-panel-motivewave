@@ -71,6 +71,7 @@ final class TradeEngine {
     // ---- opciones (ajustes del estudio) ----
     volatile int optBeOffset = 0;        // botón "Punto de equilibrio": ticks a favor desde la entrada
     volatile int optStpLmtOffset = 2;    // STP LMT: ticks del límite más allá del stop
+    volatile boolean optRiskExact = true; // modo Risk: el stop se ajusta al precio donde se arriesga justo el importe
     volatile int optMaxPerSec = 5;       // protección: órdenes de entrada por segundo
     volatile boolean optEntryGtc = false;
     volatile boolean optModClick = false; // Ctrl+clic = comprar, Shift+clic = vender, +Alt = a mercado
@@ -117,6 +118,7 @@ final class TradeEngine {
     private Method acctMethod;          // método (no público) que devuelve la cuenta interna de MotiveWave
     private long joinCounter;
     private String fillNote;            // aviso extra para el estado de la ejecución en curso (BE tras TP…)
+    private final Map<Object, Bracket> splitSel = new IdentityHashMap<>();   // grupo -> salida elegida (clic en su número) para separar
     private Bracket splitB;             // salida que se está sacando de su grupo (arrastre del botón #N)
     private boolean splitStop;
     private float splitPx = Float.NaN;
@@ -254,7 +256,14 @@ final class TradeEngine {
         this.host = h; this.owner = who; this.ctx = c;
         Instrument in = c != null ? c.getInstrument() : null;
         if (in != null) { symbol = String.valueOf(in.getSymbol()); lastPrice = in.getLastPrice(); }
+        String sym = in != null ? symbol : null;
         run(() -> {
+            // activado otra vez con otro activo: las órdenes del anterior no son de este gráfico
+            if (sym != null && boundSymbol != null && !boundSymbol.equals(sym)) {
+                brackets.clear(); pendingPx.clear(); engineCancels.clear();
+                armed = null; pick = null; hover = null; splitB = null;
+            }
+            if (sym != null) boundSymbol = sym;
             // la cuenta con la que se ha activado se muestra ya (sin esperar a la primera orden)
             String name = accountName(acct);
             if (name != null) account = name;
@@ -271,6 +280,14 @@ final class TradeEngine {
 
     /** Cuenta con la que se activó por última vez (para notar el cambio de cuenta). */
     private Object boundAccount;
+    /** Activo con el que se activó por última vez (para notar el cambio de activo). */
+    private String boundSymbol;
+
+    /** Activo que opera (o "—"). */
+    String symbol() { return symbol; }
+
+    /** Instrumento con el que opera ahora, o null si no está activo. */
+    Instrument instrument() { OrderContext c = ctx; return c == null ? null : c.getInstrument(); }
 
     /** Nombre visible de la cuenta interna de MotiveWave, o null. */
     private static String accountName(Object acct) {
@@ -298,6 +315,9 @@ final class TradeEngine {
     /** Milisegundos que le quedan al error en pantalla (0 si no hay). */
     long noticeLeft() { return notice().isEmpty() ? 0 : Math.max(0, NOTICE_MS - (System.currentTimeMillis() - noticeAt)); }
     void dismissNotice() { noticeAt = 0; }
+
+    /** Aviso en el gráfico aunque no sea un error (p. ej. que este gráfico opera otra cuenta). */
+    void notice(String msg) { run(() -> { setStatus(msg); notice = msg; noticeAt = System.currentTimeMillis(); }); }
     /** Cantidad calculada por el riesgo de la estrategia elegida (0 = no llega a 1 contrato), o -1 si no aplica. */
     int strategyQty() { return stratQty; }
     /** Clave de agrupación ("SL"/"SS"/"TL"/"TS") de la salida que se está colocando, o null. */
@@ -615,8 +635,31 @@ final class TradeEngine {
             List<Bracket> members = groupOf(b, stop);
             if (members.size() < 2) return;
             armed = null; pick = null; hover = null;
-            splitB = stackTop(members, stop); splitStop = stop; splitPx = Float.NaN;
+            Bracket sel = splitSel.get(b.leg(stop).group);
+            splitB = sel != null && members.contains(sel) ? sel : stackTop(members, stop);
+            splitStop = stop; splitPx = Float.NaN;
             setStatus("");
+        });
+    }
+
+    /**
+     * Clic en un número de la insignia de un grupo ("1·3·2"): esa salida será la que saque el botón #N
+     * (por defecto, la última que entró). Otro clic en el mismo número vuelve a lo de por defecto.
+     */
+    void selectSplit(String id, String num) {
+        run(() -> {
+            Bracket b = bySerial(id);
+            if (b == null || id.isEmpty()) return;
+            char t = id.charAt(0);
+            if (t != 'S' && t != 'T') return;
+            boolean stop = t == 'S';
+            Leg l = b.leg(stop);
+            if (l.group == null || !groupable(b, l)) return;
+            Bracket sel = null;
+            for (Bracket mb : groupOf(b, stop)) if (String.valueOf(mb.num).equals(num)) sel = mb;
+            if (sel == null) return;
+            if (splitSel.get(l.group) == sel) splitSel.remove(l.group);
+            else splitSel.put(l.group, sel);
         });
     }
 
@@ -650,6 +693,7 @@ final class TradeEngine {
             String err = legMoveError(c, b, l, px);
             if (err != null) { setStatus(what + T.t(" NO separado: ") + err); return; }
             int left = groupOf(b, stop).size() - 1;
+            splitSel.remove(l.group);
             l.group = null;
             boolean trailOff = applyLegMove(c, b, l, px);
             int joined = joinAt(b, l, px);
@@ -1035,7 +1079,26 @@ final class TradeEngine {
      */
     boolean sameAccount(OrderContext other) {
         Object a = account(ctx), b = account(other);
-        return a == null || b == null || a == b || a.equals(b);
+        if (a == null || b == null || a == b || a.equals(b)) return true;
+        // la misma cuenta puede llegar como objetos distintos: se compara también su identificador
+        String ia = accountId(a), ib = accountId(b);
+        return ia != null && ia.equals(ib);
+    }
+
+    /** Nombre de la cuenta de ese contexto de órdenes (para los avisos), o "?". */
+    String accountNameOf(OrderContext c) { String n = accountName(account(c)); return n == null ? "?" : n; }
+
+    /** Nombre de la cuenta con la que opera este motor, o "?". */
+    String accountName() { return accountNameOf(ctx); }
+
+    private static String accountId(Object acct) {
+        for (String m : new String[]{"getAccountID", "getAccountName", "getDisplayName"}) {
+            try {
+                Object v = acct.getClass().getMethod(m).invoke(acct);
+                if (v instanceof String && !((String) v).isBlank()) return ((String) v).trim();
+            } catch (Throwable ignore) { }
+        }
+        return null;
     }
 
     /** Cuenta interna de MotiveWave del contexto de órdenes (el SDK no la da), o null. */
@@ -1057,6 +1120,72 @@ final class TradeEngine {
             }
             return acctMethod == null ? null : acctMethod.invoke(c);
         } catch (Throwable ignore) { return null; }
+    }
+
+    // ---- P/L diario sacado del historial de la cuenta ----
+    private Method execByAcct;            // Executions.byAccountAndInstr(Account, Instrument) de MotiveWave
+    private boolean execTried;
+    private double dayPnl = Double.NaN;   // último cálculo (se rehace como mucho cada DAY_PNL_MS)
+    private long dayPnlAt;
+    private static final long DAY_PNL_MS = 1000;
+
+    /**
+     * P/L realizado hoy en esta cuenta y este activo, según el historial de ejecuciones de MotiveWave:
+     * así no vuelve a 0 al desactivar y activar la estrategia. Si el historial no está disponible,
+     * se usa el realizado de la estrategia (desde que se activó).
+     */
+    double dailyPnl(OrderContext c) {
+        long now = System.currentTimeMillis();
+        if (!Double.isNaN(dayPnl) && now - dayPnlAt < DAY_PNL_MS) return dayPnl;
+        double own = c.getTotalRealizedPnL();
+        double hist = Double.NaN;
+        try {
+            Object acct = account(c);
+            Instrument in = c.getInstrument();
+            if (acct != null && in != null) {
+                if (!execTried) {
+                    execTried = true;
+                    Class<?> k = Class.forName("com.motivewave.platform.databean.Executions", true, acct.getClass().getClassLoader());
+                    for (Method m : k.getMethods()) {
+                        Class<?>[] p = m.getParameterTypes();
+                        if ("byAccountAndInstr".equals(m.getName()) && p.length == 2 && p[1] == Instrument.class
+                            && p[0].isInstance(acct)) { execByAcct = m; break; }
+                    }
+                }
+                if (execByAcct != null) {
+                    Object list = execByAcct.invoke(null, acct, in);
+                    if (list instanceof List) hist = sumSince((List<?>) list, startOfToday());
+                }
+            }
+        } catch (Throwable ignore) { }
+        // si el historial no trae P/L (o no se pudo leer), vale lo de la estrategia
+        dayPnl = Double.isNaN(hist) || (hist == 0 && own != 0) ? own : hist;
+        dayPnlAt = now;
+        return dayPnl;
+    }
+
+    /** Inicio del día de hoy (medianoche local) en milisegundos. */
+    static long startOfToday() {
+        return java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+    }
+
+    /** Suma getPnl() de las ejecuciones con getTime() >= desde (las entradas aportan 0). */
+    static double sumSince(List<?> execs, long since) {
+        double sum = 0;
+        Method time = null, pnl = null;
+        for (Object e : execs) {
+            if (e == null) continue;
+            try {
+                if (time == null || !time.getDeclaringClass().isInstance(e)) {
+                    time = e.getClass().getMethod("getTime");
+                    pnl = e.getClass().getMethod("getPnl");
+                }
+                if (((Number) time.invoke(e)).longValue() < since) continue;
+                double v = ((Number) pnl.invoke(e)).doubleValue();
+                if (!Double.isNaN(v) && !Double.isInfinite(v)) sum += v;
+            } catch (Throwable ignore) { }
+        }
+        return sum;
     }
 
     /**
@@ -1085,6 +1214,7 @@ final class TradeEngine {
             }
             q = fixedQty > 0 ? fixedQty : riskQty(c, ref, slAbs);
             if (q < 1) { setStatus(T.t("NO enviada: con ese stop el riesgo no cubre ni 1 contrato (acerca el stop o sube el riesgo del SL)")); return false; }
+            if (fixedQty <= 0) slAbs = riskStop(c, buy, ref, q, slAbs);   // el stop va donde se arriesga justo el importe
         }
         Config.Strategy strat = cfg.oco || slAbs != null ? cfg.multi() : null;
         if (strat != null && slAbs == null && strat.riskOn) {
@@ -2143,12 +2273,35 @@ final class TradeEngine {
         return T.t("con el riesgo de «") + st.name + "» (" + money(m) + T.t(") no llega ni a 1 contrato");
     }
 
-    /** Modo Risk: contratos = riesgo en dinero / (distancia al stop × valor del punto), redondeado. */
+    /**
+     * Modo Risk: contratos = riesgo en dinero / (distancia al stop × valor del punto), redondeado.
+     * Con el ajuste exacto se elige la cantidad cuyo stop exacto ({@link #riskStop}) queda más cerca del marcado.
+     */
     private int riskQty(OrderContext c, float entry, float stop) {
-        double perContract = Math.abs(entry - stop) * pointValue(c);
+        double d = Math.abs(entry - stop), pv = pointValue(c);
+        double perContract = d * pv;
         double m = slRiskMoney(c);
         if (perContract <= 0 || Double.isNaN(m)) return 0;
-        return (int) Math.round(m / perContract);
+        double x = m / perContract;
+        if (!optRiskExact || x < 1) return (int) Math.round(x);
+        long lo = (long) Math.floor(x + 1e-9);
+        double full = m / pv;                               // distancia a la que 1 contrato arriesga todo el importe
+        long q = full / lo - d <= d - full / (lo + 1) ? lo : lo + 1;
+        return (int) Math.min(Integer.MAX_VALUE, q);
+    }
+
+    /**
+     * Modo Risk con ajuste exacto: precio del stop con el que {@code q} contratos arriesgan justo el importe
+     * del SL (al tick más cercano). Los contratos van de uno en uno, así que el stop marcado casi nunca da el
+     * importe exacto: se mueve el stop a donde sí lo da.
+     */
+    private float riskStop(OrderContext c, boolean buy, float ref, int q, float marked) {
+        double m = slRiskMoney(c);
+        if (!optRiskExact || q < 1 || Double.isNaN(m) || m <= 0) return marked;
+        Instrument in = c.getInstrument();
+        double tick = in.getTickSize();
+        double d = Math.max(1, Math.round(m / (q * pointValue(c)) / tick)) * tick;
+        return (float) in.round(buy ? ref - d : ref + d);
     }
 
     /** Una LMT/STP en el lado equivocado del mercado se ejecutaría al instante: se rechaza. */
@@ -2425,7 +2578,7 @@ final class TradeEngine {
             Instrument in = c.getInstrument();
             Object br = in.getBroker();
             return new PanelSnapshot(true, symbol, br == null ? "—" : br.toString(), account, c.getCashBalance(),
-                c.getPosition(), c.getUnrealizedPnL(), c.getTotalRealizedPnL(), armedText(a), status, ab, ak, autoInitialBalance(c));
+                c.getPosition(), c.getUnrealizedPnL(), dailyPnl(c), armedText(a), status, ab, ak, autoInitialBalance(c));
         } catch (Throwable t) {
             return new PanelSnapshot(true, symbol, "—", account, 0, 0, 0, 0, armedText(a), status, ab, ak, Double.NaN);
         }
@@ -2519,6 +2672,7 @@ final class TradeEngine {
     private void exitLines(OrderContext c, List<ExitView> exits, List<LineModel> out) {
         List<ExitView> done = new ArrayList<>();
         ExitView sv = null;                                  // salida que se está sacando de su grupo
+        Set<Object> liveGroups = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         for (ExitView v : exits) {
             if (done.contains(v)) continue;
             List<ExitView> grp = new ArrayList<>();
@@ -2560,9 +2714,18 @@ final class TradeEngine {
             if (groupable(f.b, f.l)) m.merge((stop ? "S" : "T") + (f.b.buy ? "L" : "S"));
             if (hasMoney && qty > 0) m.money(exitLabel(c, money, dist / qty, hasRisk ? risk : Double.NaN));
             if (stop) m.btn("TS", trail);
-            if (grp.size() > 1) m.btn("#" + grp.size());
+            Bracket sel = null;
+            if (f.l.group != null) {
+                liveGroups.add(f.l.group);
+                Bracket s0 = splitSel.get(f.l.group);
+                for (ExitView g : grp) if (g.b == s0) sel = s0;
+            }
+            if (sel != null) m.badgeSel(String.valueOf(sel.num));
+            // #N: cuántas hay; con un número elegido, #<ese número> (es la que sacará el arrastre)
+            if (grp.size() > 1) m.btn("#" + (sel != null ? sel.num : grp.size()));
             out.add(m.btn("X").build());
         }
+        splitSel.keySet().retainAll(liveGroups);            // grupos que ya no existen
         if (sv != null) {
             float h = splitPx;
             String type = sv.l.stop ? " STP" : " LMT";
@@ -2679,9 +2842,10 @@ final class TradeEngine {
                 .text(wrong ? T.t("PR | STP · lado incorrecto") : T.t("PR | STP · riesgo insuficiente para 1 contrato")).color(C_MUTED).dotted(true).build());
             return;
         }
-        out.add(LineModel.of("PS", LineModel.Kind.PREVIEW, h).text("PR | " + signed(a.buy, q) + " STP")
-            .money(riskLabel(c, Math.abs(pnl(c, ref, h, q)), Math.abs(ref - h))).color(exitStop).dotted(true).build());
-        targetPreviews(c, out, a.buy, ref, q, Math.abs(ref - h));
+        float sp = riskStop(c, a.buy, ref, q, h);          // donde irá de verdad el stop (importe exacto)
+        out.add(LineModel.of("PS", LineModel.Kind.PREVIEW, sp).text("PR | " + signed(a.buy, q) + " STP")
+            .money(riskLabel(c, Math.abs(pnl(c, ref, sp, q)), Math.abs(ref - sp))).color(exitStop).dotted(true).build());
+        targetPreviews(c, out, a.buy, ref, q, Math.abs(ref - sp));
     }
 
     /** Vista previa del objetivo (o de los objetivos de la estrategia Multi) de una entrada de {@code q} en {@code ref}. */

@@ -46,6 +46,9 @@ final class T {
 
     static {
         M.put(" paso", " step");
+        M.put("Este gráfico opera la cuenta ", "This chart trades the account ");
+        M.put(" por separado: el otro gráfico de este activo opera ", " separately: the other chart of this instrument trades ");
+        M.put(". Para verlo como espejo, no lo actives (o actívalo con la misma cuenta).", ". To use it as a mirror, don't activate it (or activate it with the same account).");
         M.put("Cuenta cambiada a ", "Account changed to ");
         M.put(": las órdenes de la otra cuenta ya no se muestran aquí", ": orders of the other account are no longer shown here");
         M.put("· inactiva: pulsa Activate", "· inactive: press Activate");
@@ -316,7 +319,15 @@ final class T {
         M.put("PR | STP · lado incorrecto", "PR | STP · wrong side");
         M.put("PR | STP · riesgo insuficiente para 1 contrato", "PR | STP · not enough risk for 1 contract");
         M.put("Órdenes", "Orders");
-        M.put("Punto de equilibrio: ticks a favor desde la entrada", "Breakeven: ticks in favor from the entry");
+        M.put("Botón BE: ticks a favor desde la entrada (desplazamiento del BE)", "BE button: ticks in favor from the entry (BE offset)");
+        M.put("Acerca de", "About");
+        M.put("versión", "version");
+        M.put("Activo que opera el panel: elige otro de los gráficos con el Trade Panel activado", "Instrument the panel trades: pick another chart where the Trade Panel is active");
+        M.put("Otro activo: añade el Trade Panel a su gráfico y pulsa Activate", "Another instrument: add the Trade Panel to its chart and press Activate");
+        M.put("Este gráfico ahora es ", "This chart is now ");
+        M.put(" pero el Trade Panel sigue operando ", " but the Trade Panel still trades ");
+        M.put(": pulsa Deactivate y luego Activate para operar el nuevo activo.", ": press Deactivate and then Activate to trade the new instrument.");
+        M.put("Modo Risk: mover el stop al precio donde se arriesga justo el importe del SL", "Risk mode: move the stop to the price where exactly the SL amount is at risk");
         M.put("STP LMT: ticks del límite más allá del stop", "STP LMT: limit ticks beyond the stop");
         M.put("Entradas GTC (si no, DAY)", "GTC entries (otherwise DAY)");
         M.put("Protecciones", "Protections");

@@ -100,6 +100,19 @@ final class PanelWindow {
 
     static boolean isShowing(TradeEngine e) { return shownEngine == e; }
 
+    /** Motor que muestra el panel visible, o null. */
+    static TradeEngine shown() { return shownEngine; }
+
+    /** El panel visible pasa a mostrar ese motor (sin traerlo al frente: se está trabajando en el gráfico). */
+    static void follow(TradeEngine e) {
+        fx(() -> {
+            PanelWindow w = instance;
+            if (w == null || !w.stage.isShowing() || w.engine == e) return;
+            w.bind(e);
+            shownEngine = e;
+        });
+    }
+
     /** Cambio de idioma: el panel (y el editor de estrategias) se vuelven a crear con los textos nuevos. */
     static void relocalize() {
         fx(() -> {
@@ -339,7 +352,12 @@ final class PanelWindow {
 
         // instrumento
         HBox sym = field(lblSymbol, grow(), chevron());
-        Tooltip.install(sym, new Tooltip(T.t("Instrumento del gráfico donde está activa la estrategia")));
+        Tooltip.install(sym, new Tooltip(T.t("Activo que opera el panel: elige otro de los gráficos con el Trade Panel activado")));
+        sym.setOnMousePressed(ev -> {
+            if (ev.getButton() != MouseButton.PRIMARY) return;
+            ev.consume();
+            if (!justClosed(sym)) symbolMenu(sym);
+        });
         b.getChildren().add(sym);
 
         // saldo y P/L
@@ -412,7 +430,11 @@ final class PanelWindow {
             + T.t("pasos con un % de la cantidad, cada uno con su stop y su objetivo, riesgo que calcula la cantidad y break even.\n")
             + T.t("Se crean y se editan con el icono de ajustes de la derecha.")));
         Tooltip.install(lblGear, new Tooltip(T.t("Estrategias de salida: nueva, editar, duplicar o eliminar")));
-        lblGear.setOnMouseClicked(ev -> gearMenu());
+        lblGear.setOnMousePressed(ev -> {
+            if (ev.getButton() != MouseButton.PRIMARY) return;
+            ev.consume();
+            if (!justClosed(lblGear)) gearMenu();
+        });
         cbMode.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(cbMode, Priority.ALWAYS);
         HBox modeRow = new HBox(4, cbMode, lblGear);
@@ -495,8 +517,7 @@ final class PanelWindow {
         spTrDist.onChange = v -> change(c -> c.trailDist = Math.max(1, (int) v));
         cbMode.onChange = v -> change(c -> {
             Config.Strategy st = c.find(v);
-            c.strategy = st == null ? "" : st.name;
-            if (st != null) c.qtyMode = Config.QtyMode.QTY;     // la estrategia define los stops y su propio riesgo
+            c.strategy = st == null ? "" : st.name;            // con estrategia manda ella; Qty/Risk/Promediado se recuerda para SL/TP
         });
         cbMode.extraLabel = T.t("Nueva estrategia…");
         cbMode.extra = () -> editStrategy(null, false);
@@ -546,6 +567,26 @@ final class PanelWindow {
     //  estrategias Multi (como en DeepCharts: ajustes -> nueva estrategia -> añadir brackets -> guardar)
     // ------------------------------------------------------------------
 
+    /** Desplegable del activo: los gráficos con el Trade Panel activado (MotiveWave no deja cambiar el activo de un gráfico). */
+    private void symbolMenu(Node owner) {
+        ContextMenu menu = new ContextMenu();
+        menu.getStyleClass().add("tp-menu");
+        java.util.List<TradeEngine> list = TradePanelStrategy.activeEngines();
+        java.util.Map<String, Integer> count = new java.util.HashMap<>();
+        for (TradeEngine e : list) count.merge(e.symbol(), 1, Integer::sum);
+        for (TradeEngine e : list) {
+            String name = e.symbol() + (count.get(e.symbol()) > 1 ? "  ·  " + e.accountName() : "");
+            MenuItem it = new MenuItem((e == engine ? "✓  " : "     ") + name);
+            it.setOnAction(a -> { if (e != engine) show(e, alwaysOnTop); });
+            menu.getItems().add(it);
+        }
+        if (!list.isEmpty()) menu.getItems().add(new SeparatorMenuItem());
+        MenuItem hint = new MenuItem(T.t("Otro activo: añade el Trade Panel a su gráfico y pulsa Activate"));
+        hint.setDisable(true);
+        menu.getItems().add(hint);
+        showMenu(menu, owner);
+    }
+
     private void gearMenu() {
         if (engine == null) return;
         Config.Strategy cur = engine.cfg.multi();
@@ -563,7 +604,26 @@ final class PanelWindow {
             de.setOnAction(a -> change(c -> c.removeStrategy(cur.name)));
             menu.getItems().addAll(ed, du, new SeparatorMenuItem(), de);
         }
-        menu.show(lblGear, Side.BOTTOM, 0, 2);
+        showMenu(menu, lblGear);
+    }
+
+    // ---- menús desplegables (solo hilo JavaFX) ----
+    private static Node menuOwner;          // control cuyo menú se cerró por última vez
+    private static long menuClosedAt;
+
+    /**
+     * Abre un menú bajo su control. El clic que cierra un menú abierto no se "come" (si se pulsa otro
+     * desplegable, se abre a la primera); pulsar el mismo control con su menú abierto solo lo cierra.
+     */
+    static void showMenu(ContextMenu menu, Node owner) {
+        menu.setConsumeAutoHidingEvents(false);
+        menu.setOnHidden(e -> { menuOwner = owner; menuClosedAt = System.currentTimeMillis(); });
+        menu.show(owner, Side.BOTTOM, 0, 2);
+    }
+
+    /** ¿El menú de este control se acaba de cerrar con este mismo clic? */
+    static boolean justClosed(Node owner) {
+        return menuOwner == owner && System.currentTimeMillis() - menuClosedAt < 300;
     }
 
     /** Texto bajo «Modo» con la estrategia elegida; si calcula la cantidad por riesgo, esa cantidad va al campo de cantidad. */
@@ -774,7 +834,7 @@ final class PanelWindow {
                 : st.riskOn && st.risk <= 0 ? T.t("Con Riesgo activado el importe tiene que ser mayor que 0") : null;
             if (bad != null) { err.setText(bad); d.sizeToScene(); return; }
             d.close();
-            change(c -> { c.putStrategy(replaces, st); c.qtyMode = Config.QtyMode.QTY; });
+            change(c -> c.putStrategy(replaces, st));
         });
         Btn cancel = new Btn(T.t("Cancelar"), "tp-out-orange", d::close);
         save.setPrefWidth(84); save.setMaxWidth(84);
@@ -1111,8 +1171,11 @@ final class PanelWindow {
             if (caption != null) getChildren().addAll(label(caption, "tp-dim"), grow(), value, chevron());
             else getChildren().addAll(value, grow(), chevron());
             set(opts[0]);
-            setOnMouseClicked(ev -> {
+            setOnMousePressed(ev -> {
+                if (ev.getButton() != MouseButton.PRIMARY || isDisabled()) return;
+                ev.consume();
                 if (options.length < 2 && extra == null) return;
+                if (justClosed(this)) return;                  // este clic era para cerrar su propio menú
                 ContextMenu menu = new ContextMenu();
                 menu.getStyleClass().add("tp-menu");
                 for (String o : options) {
@@ -1125,7 +1188,7 @@ final class PanelWindow {
                     it.setOnAction(a -> extra.run());
                     menu.getItems().addAll(new SeparatorMenuItem(), it);
                 }
-                menu.show(this, Side.BOTTOM, 0, 2);
+                showMenu(menu, this);
             });
         }
         void setOptions(String... o) { options = o; }

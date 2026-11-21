@@ -40,6 +40,7 @@ public final class EngineTest {
         Env(float price) {
             sim = new SimBroker(0.25, 2.0, price);
             sim.engine = eng;
+            eng.optRiskExact = false;      // las pruebas de siempre: el stop del modo Risk se queda donde se marca
             eng.bind(sim.ctx, new TradeEngine.Host() {
                 @Override public void redraw() { }
                 @Override public void log(String msg) { logs.add(msg); }
@@ -49,6 +50,14 @@ public final class EngineTest {
         LineModel lineWith(String text) { for (LineModel m : eng.lines()) if (m.text.contains(text)) return m; return null; }
         String status() { return eng.snapshot().status; }
         String dump() { StringBuilder sb = new StringBuilder(); for (LineModel m : eng.lines()) sb.append("\n      ").append(m.id).append(" ").append(m.text).append(m.linked ? " [link]" : "").append(m.money != null ? " | " + m.money : "").append(" @ ").append(m.price); return sb.toString(); }
+    }
+
+    /** Ejecución del historial con los dos getters que lee el P/L diario. */
+    public static final class FakeExec {
+        private final long t; private final double p;
+        FakeExec(long t, double p) { this.t = t; this.p = p; }
+        public long getTime() { return t; }
+        public double getPnl() { return p; }
     }
 
     private static void test(String name, Runnable r) {
@@ -124,6 +133,58 @@ public final class EngineTest {
             check("stop en lado incorrecto rechazado y sigue armado", e.eng.isArmed() && e.status().contains("lado incorrecto"));
             e.eng.disarm();
             check("desarmar", !e.eng.isArmed());
+        });
+
+        test("modo Risk con importe exacto: el stop se mueve al precio donde se arriesga justo el riesgo", () -> {
+            Env e = new Env(29765f);
+            e.eng.optRiskExact = true;
+            Config c = e.eng.cfg;
+            c.qtyMode = Config.QtyMode.RISK; c.oco = true; c.slOn = true; c.slUnit = Config.Unit.MONEY; c.slMoney = 1500; c.tpOn = false;
+            e.eng.arm(false, TradeEngine.Kind.LIMIT);
+            e.eng.chartClick(29777.50f, false, false, false);
+            // stop marcado a 170 puntos: 340 $/contrato -> 4 contratos serían 1360 $; el exacto de 4 es a 187,50 puntos
+            e.eng.hover(29947.50f);
+            LineModel pr = e.lineWith("PR | -4 STP");
+            check("vista previa con 4 contratos" + e.dump(), pr != null);
+            check("la vista previa ya enseña el stop movido", pr != null && pr.price == 29965.00f);
+            eq("riesgo mostrado", "1500,00 $", pr == null ? null : pr.money);
+            e.eng.chartClick(29947.50f, false, false, false);
+            SimBroker.SimOrder entry = e.sim.working(Enums$OrderType.LIMIT, false);
+            check("entrada de 4 contratos", entry != null && entry.qty == 4);
+            LineModel sl = e.lineWith("Int | +4 STP");
+            check("stop en 29965,00" + e.dump(), sl != null && sl.price == 29965.00f);
+            eq("riesgo del stop", "-1500,00 $", sl == null ? null : sl.money);
+
+            // se elige la cantidad cuyo stop exacto queda más cerca del marcado (5 contratos = 150 puntos; 4 = 187,50)
+            e.eng.arm(false, TradeEngine.Kind.LIMIT);
+            e.eng.chartClick(29800f, false, false, false);
+            e.eng.hover(29800f + 160f);
+            LineModel p5 = e.lineWith("PR | -5 STP");
+            check("160 puntos -> 5 contratos a 150 puntos" + e.dump(), p5 != null && p5.price == 29950.00f);
+            e.eng.hover(29800f + 175f);
+            LineModel p4 = e.lineWith("PR | -4 STP");
+            check("175 puntos -> 4 contratos a 187,50 puntos" + e.dump(), p4 != null && p4.price == 29987.50f);
+            // cuando el importe no cae en un tick, al tick más cercano: 7 contratos = 107,14 puntos -> 107,25
+            e.eng.hover(29800f + 108f);
+            LineModel p7 = e.lineWith("PR | -7 STP");
+            check("7 contratos al tick más cercano" + e.dump(), p7 != null && p7.price == 29907.25f);
+            eq("riesgo al tick más cercano", "1501,50 $", p7 == null ? null : p7.money);
+            // más lejos de lo que cubre 1 contrato (750 puntos): 1 contrato con el stop en su máximo
+            e.eng.hover(29800f + 900f);
+            LineModel p1 = e.lineWith("PR | -1 STP");
+            check("1 contrato con el stop a 750 puntos" + e.dump(), p1 != null && p1.price == 30550.00f);
+            e.eng.disarm();
+
+            // compra a mercado: el stop sale de la referencia (ask) con el importe exacto
+            Env m = new Env(100f);
+            m.eng.optRiskExact = true;
+            Config mc = m.eng.cfg;
+            mc.qtyMode = Config.QtyMode.RISK; mc.oco = true; mc.slOn = true; mc.slUnit = Config.Unit.MONEY; mc.slMoney = 100; mc.tpOn = false;
+            m.eng.market(true);
+            m.eng.chartClick(94.50f, false, false, false);   // ask 100,25 -> 5,75 puntos = 11,50 $/contrato -> 9 contratos a 5,50 puntos
+            eq("posición larga de 9", 9, m.sim.position);
+            SimBroker.SimOrder stop = m.sim.working(Enums$OrderType.STOP, false);
+            check("stop movido a 94,75 x9", stop != null && stop.stop == 94.75f && stop.qty == 9);
         });
 
         test("modo Risk exige SL en Money", () -> {
@@ -838,6 +899,38 @@ public final class EngineTest {
             check("separada y soltada sobre otro: se agrupa con él" + e.dump(), e.lineWith("Int | +2 STP") != null && e.lineWith("Int | +2 STP").price == 112f);
         });
 
+        test("grupo: clic en un número elige qué salida saca el botón #N", () -> {
+            Env e = new Env(100f);
+            Config c = e.eng.cfg;
+            c.qty = 1; c.oco = true; c.slOn = true; c.slTicks = 20; c.tpOn = false;
+            for (float p : new float[]{104f, 105f, 106f}) { e.eng.arm(false, TradeEngine.Kind.LIMIT); e.eng.chartClick(p, false, false, false); }
+            String id1 = null, id2 = null, id3 = null;      // stops de las entradas 1 (109), 2 (110) y 3 (111)
+            for (LineModel m : e.eng.lines()) if (m.kind == LineModel.Kind.STOP) {
+                if (m.price == 109f) id1 = m.id; else if (m.price == 110f) id2 = m.id; else if (m.price == 111f) id3 = m.id;
+            }
+            e.eng.moveLine(id1, 110f);
+            e.eng.moveLine(id3, 110f);
+            LineModel g = e.lineWith("Int | +3 STP");
+            eq("insignia del grupo", "1·2·3", g.badge);
+            check("sin elegir: #3 normal", g.buttons.stream().anyMatch(b -> "#3".equals(b.text) && !b.active) && g.badgeSel == null);
+            e.eng.selectSplit(g.id, "1");
+            g = e.lineWith("Int | +3 STP");
+            check("elegido el 1: botón #1 (sin cambiar de color) e insignia marcada" + e.dump(), "1".equals(g.badgeSel) && g.buttons.stream().anyMatch(b -> "#1".equals(b.text) && !b.active));
+            e.eng.splitBegin(g.id);
+            e.eng.splitMove(112f);
+            e.eng.splitDrop(110f);                            // se arrepiente: la suelta otra vez encima del grupo
+            check("soltada encima del grupo: sigue agrupada" + e.dump(), e.lineWith("Int | +3 STP") != null && e.lineWith("Int | +3 STP").price == 110f && e.line("PX") == null);
+            g = e.lineWith("Int | +3 STP");
+            e.eng.splitBegin(g.id);
+            e.eng.splitDrop(108f);
+            check("el arrastre saca la 1 (no la última que entró)" + e.dump(), e.line(id1) != null && e.line(id1).price == 108f && "1".equals(e.line(id1).badge));
+            g = e.lineWith("Int | +2 STP");
+            check("el grupo sigue con 2·3 y vuelve a lo de por defecto", g != null && "2·3".equals(g.badge) && g.badgeSel == null && g.buttons.stream().anyMatch(b -> "#2".equals(b.text) && !b.active));
+            e.eng.selectSplit(g.id, "3");
+            e.eng.selectSplit(g.id, "3");
+            check("otro clic en el mismo número lo quita", e.lineWith("Int | +2 STP").badgeSel == null);
+        });
+
         test("número de cada entrada: el menor libre desde 1, compartido con su SL y su TP", () -> {
             Env e = new Env(100f);
             Config c = e.eng.cfg;
@@ -1195,6 +1288,45 @@ public final class EngineTest {
             f.eng.cfg.qty = 1;
             f.eng.market(true);                                   // sin stop
             check("sin stops no hay riesgo ni R", !f.line("POS").money.contains("R") && !f.line("POS").money.contains("riesgo"));
+        });
+
+        test("cambio de activo: reactivado con otro activo, el motor no arrastra las órdenes del anterior", () -> {
+            Env e = new Env(100f);
+            e.eng.cfg.qty = 1; e.eng.cfg.oco = true; e.eng.cfg.slOn = true; e.eng.cfg.slTicks = 20; e.eng.cfg.tpOn = false;
+            e.eng.arm(true, TradeEngine.Kind.LIMIT);
+            e.eng.chartClick(98f, false, false, false);
+            check("hay líneas del primer activo", e.lineWith("ENTRY") != null || !e.eng.lines().isEmpty());
+            eq("activo", "MNQ-TEST", e.eng.symbol());
+            // el mismo gráfico se reactiva con otro activo (otro contexto de órdenes)
+            SimBroker otro = new SimBroker(0.25, 50.0, 5000f);
+            otro.symbol = "ES-TEST";
+            otro.engine = e.eng;
+            e.eng.unbind(e);
+            e.eng.bind(otro.ctx, new TradeEngine.Host() { public void redraw() { } public void log(String m) { } }, e);
+            eq("activo nuevo", "ES-TEST", e.eng.symbol());
+            check("sin líneas del activo anterior" + e.dump(), e.eng.lines().isEmpty());
+            // reactivar con el mismo activo NO borra nada
+            e.eng.arm(true, TradeEngine.Kind.LIMIT);
+            e.eng.chartClick(4990f, false, false, false);
+            int n = e.eng.lines().size();
+            e.eng.unbind(e);
+            e.eng.bind(otro.ctx, new TradeEngine.Host() { public void redraw() { } public void log(String m) { } }, e);
+            check("mismo activo: se conservan sus órdenes", n > 0 && e.eng.lines().size() == n);
+        });
+
+        test("P/L diario: suma solo las ejecuciones de hoy del historial de la cuenta", () -> {
+            long hoy = TradeEngine.startOfToday();
+            List<FakeExec> h = new ArrayList<>();
+            h.add(new FakeExec(hoy - 3_600_000L, 500));      // ayer: no cuenta
+            h.add(new FakeExec(hoy + 60_000L, 0));           // entrada de hoy
+            h.add(new FakeExec(hoy + 120_000L, 37.5));       // salida de hoy
+            h.add(new FakeExec(hoy + 180_000L, -12.5));      // otra salida de hoy
+            h.add(null);
+            near("solo hoy", 25.0, TradeEngine.sumSince(h, hoy));
+            near("historial vacío", 0.0, TradeEngine.sumSince(new ArrayList<>(), hoy));
+            // sin historial de MotiveWave (simulador de pruebas) sigue valiendo el realizado de la estrategia
+            Env e = new Env(100f);
+            near("sin historial: el de la estrategia", e.sim.ctx.getTotalRealizedPnL(), e.eng.snapshot().dailyPnl);
         });
 
         test("varios gráficos del mismo activo: el espejo se repinta y opera con el mismo motor", () -> {

@@ -34,6 +34,7 @@ import com.motivewave.platform.sdk.common.TickOperation;
 import com.motivewave.platform.sdk.common.desc.BooleanDescriptor;
 import com.motivewave.platform.sdk.common.desc.DiscreteDescriptor;
 import com.motivewave.platform.sdk.common.desc.IntegerDescriptor;
+import com.motivewave.platform.sdk.common.desc.LabelDescriptor;
 import com.motivewave.platform.sdk.common.desc.SettingGroup;
 import com.motivewave.platform.sdk.common.desc.SettingTab;
 import com.motivewave.platform.sdk.common.desc.SettingsDescriptor;
@@ -86,7 +87,11 @@ import javafx.scene.input.MouseEvent;
 )
 public class TradePanelStrategy extends Study implements TradeEngine.Host {
 
+    /** Versión del Trade Panel (se muestra en los ajustes). Al publicar una versión nueva, subirla aquí. */
+    static final String VERSION = "1.0.2";
+
     private static final String BE_OFFSET     = "beOffset";
+    private static final String RISK_EXACT    = "riskExact";
     private static final String STPLMT_OFFSET = "stpLmtOffset";
     private static final String MAX_PER_SEC   = "maxPerSec";
     private static final String ENTRY_GTC     = "entryGtc";
@@ -120,6 +125,7 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
     /** Motor que opera cada activo (cada símbolo del activo -> motor del gráfico activado). */
     private static final Map<String, TradeEngine> ENGINES = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile Set<String> chartKeys = Set.of();   // símbolos del activo de este gráfico
+    private volatile Set<String> activeChartKeys = Set.of(); // símbolos del gráfico cuando se activó aquí
     private volatile TradeEngine viewing;       // motor de otro gráfico que este muestra (espejo), o null
 
     /** Un hilo para todas las instancias: redibuja cuando caduca el error mostrado en el gráfico. */
@@ -151,9 +157,10 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         sd.addTab(tab);
 
         SettingGroup g1 = new SettingGroup(T.t("Órdenes"));
-        g1.addRow(new IntegerDescriptor(BE_OFFSET, T.t("Punto de equilibrio: ticks a favor desde la entrada"), 0, 0, 500, 1));
+        g1.addRow(new IntegerDescriptor(BE_OFFSET, T.t("Botón BE: ticks a favor desde la entrada (desplazamiento del BE)"), 0, 0, 500, 1));
         g1.addRow(new IntegerDescriptor(STPLMT_OFFSET, T.t("STP LMT: ticks del límite más allá del stop"), 2, 0, 500, 1));
         g1.addRow(new BooleanDescriptor(ENTRY_GTC, T.t("Entradas GTC (si no, DAY)"), false));
+        g1.addRow(new BooleanDescriptor(RISK_EXACT, T.t("Modo Risk: mover el stop al precio donde se arriesga justo el importe del SL"), true));
         tab.addGroup(g1);
 
         SettingGroup g2 = new SettingGroup(T.t("Protecciones"));
@@ -184,6 +191,10 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         g5.addRow(new BooleanDescriptor(EXIT_R, T.t("Mostrar R"), false));
         tab.addGroup(g5);
 
+        SettingGroup g6 = new SettingGroup(T.t("Acerca de"));
+        g6.addRow(new LabelDescriptor("DeepCharts Trade Panel in MotiveWave · " + T.t("versión") + " " + VERSION));
+        tab.addGroup(g6);
+
         setSettingsDescriptor(sd);
     }
 
@@ -199,6 +210,7 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
 
     private void applyOptions(TradeEngine e) {
         e.optBeOffset = getSettings().getInteger(BE_OFFSET, 0);
+        e.optRiskExact = getSettings().getBoolean(RISK_EXACT, true);
         e.optStpLmtOffset = getSettings().getInteger(STPLMT_OFFSET, 2);
         e.optMaxPerSec = getSettings().getInteger(MAX_PER_SEC, 5);
         e.optEntryGtc = getSettings().getBoolean(ENTRY_GTC, false);
@@ -232,7 +244,11 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         Set<String> ks = union(keys(c == null ? null : c.getInstrument()), chartKeys);
         TradeEngine s = find(ks);
         boolean mirror = s != null && s != engine && s.sameAccount(c);   // con otra cuenta, este gráfico opera por su cuenta
-        trace("Activate · gráfico " + chartKeys + " · órdenes " + keys(c == null ? null : c.getInstrument()) + (mirror ? " · ya hay otro gráfico operando: espejo" : " · opera este gráfico"));
+        boolean otherAccount = s != null && s != engine && !mirror;
+        trace("Activate · gráfico " + chartKeys + " · órdenes " + keys(c == null ? null : c.getInstrument())
+            + (mirror ? " · ya hay otro gráfico operando: espejo"
+               : otherAccount ? " · otro gráfico opera la cuenta " + s.accountName() + " y este " + s.accountNameOf(c) + ": por separado"
+               : " · opera este gráfico"));
         if (mirror) {
             // otro gráfico ya opera este activo: este muestra sus órdenes y las maneja con su motor
             attach(s);
@@ -246,8 +262,13 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         if (engine.isActive() && !engine.ownedBy(this)) engine = new TradeEngine();
         TradeEngine e = engine;
         applyOptions(e);
+        if (e.ownedBy(this)) unregister(e);    // reactivado (quizá con otro activo): fuera los símbolos de antes
         e.bind(c, this, this);
+        activeChartKeys = chartKeys;
         register(ks, e);
+        if (otherAccount)
+            e.notice(T.t("Este gráfico opera la cuenta ") + s.accountNameOf(c) + T.t(" por separado: el otro gráfico de este activo opera ") + s.accountName()
+                + T.t(". Para verlo como espejo, no lo actives (o actívalo con la misma cuenta)."));
         listenTicks(c, e);
         PanelWindow.watchEsc(e);
         LIVE.add(this);
@@ -256,6 +277,7 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
 
     @Override
     public void onDeactivate(OrderContext c) {
+        trace("Deactivate · gráfico " + chartKeys);
         stopTicks();
         LIVE.remove(this);
         detach();
@@ -264,7 +286,7 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
             unregister(e);
             e.unbind(this);
             PanelWindow.unwatchEsc(e);
-            PanelWindow.hide(e);
+            handOver(e);
         }
         rebuildFigures();
         notifyRedraw();
@@ -277,10 +299,11 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         detach();
         TradeEngine e = engine;
         if (e.ownedBy(this)) {
+            trace("Quitado · gráfico " + chartKeys);
             unregister(e);
             e.unbind(this);
             PanelWindow.unwatchEsc(e);
-            PanelWindow.hide(e);
+            handOver(e);
             e.dispose();
         }
         super.destroy();
@@ -324,6 +347,36 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
     }
 
     private static void unregister(TradeEngine e) { ENGINES.entrySet().removeIf(en -> en.getValue() == e); }
+
+    /**
+     * El gráfico donde se activó ha cambiado de activo sin reactivar la estrategia: esta sigue operando el
+     * activo de antes. Los símbolos nuevos no se le asignan (otro gráfico de ese activo podría operarlo) y
+     * se avisa en el gráfico de cómo pasar a operar el nuevo.
+     */
+    private void chartMoved(TradeEngine e, Set<String> was, Set<String> now) {
+        for (String k : was) ENGINES.remove(k, e);
+        for (String k : keys(e.instrument())) ENGINES.putIfAbsent(k, e);
+        activeChartKeys = now;
+        e.notice(T.t("Este gráfico ahora es ") + String.join("/", now) + T.t(" pero el Trade Panel sigue operando ") + e.symbol()
+            + T.t(": pulsa Deactivate y luego Activate para operar el nuevo activo."));
+    }
+
+    /** Motores activos (uno por activo y cuenta), ordenados por activo: los que ofrece el desplegable del panel. */
+    static List<TradeEngine> activeEngines() {
+        java.util.LinkedHashSet<TradeEngine> set = new java.util.LinkedHashSet<>();
+        for (TradeEngine e : ENGINES.values()) if (e.isActive()) set.add(e);
+        List<TradeEngine> out = new java.util.ArrayList<>(set);
+        out.sort(java.util.Comparator.comparing(TradeEngine::symbol));
+        return out;
+    }
+
+    /** El panel mostraba ese motor, que se apaga: pasa a otro activo que siga activo (o se oculta si no hay). */
+    private void handOver(TradeEngine gone) {
+        if (!PanelWindow.isShowing(gone)) { PanelWindow.hide(gone); return; }
+        for (TradeEngine o : activeEngines())
+            if (o != gone) { PanelWindow.show(o, getSettings().getBoolean(ON_TOP, false)); return; }
+        PanelWindow.hide(gone);
+    }
 
     /**
      * Motor que muestra y maneja este gráfico: el suyo si se ha activado aquí; si no, el del gráfico que
@@ -443,7 +496,16 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
                 if (!ks.equals(chartKeys)) trace("gráfico con símbolos " + ks);
                 chartKeys = ks;
                 TradeEngine e = engine;
-                if (e.isActive() && e.ownedBy(this)) register(ks, e);   // el gráfico que opera, también con los símbolos de su gráfico
+                if (e.isActive() && e.ownedBy(this)) {
+                    Set<String> was = activeChartKeys;
+                    if (was.isEmpty() || was.equals(ks)) {
+                        activeChartKeys = ks;
+                        register(ks, e);   // el gráfico que opera, también con los símbolos de su gráfico
+                    } else if (java.util.Collections.disjoint(was, ks)) {
+                        trace("el gráfico ha pasado de " + was + " a " + ks + " con la estrategia activa en " + e.symbol());
+                        chartMoved(e, was, ks);
+                    }
+                }
             }
         } catch (RuntimeException ignore) { }
         rebuildFigures();
@@ -517,6 +579,8 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         if (hud.onBanner(p) && e.isArmed()) { e.disarm(); return false; }    // clic en el aviso naranja = cancelar
         if (hud.onNotice(p)) { e.dismissNotice(); redraw(); return false; }   // clic en el error = cerrarlo
         for (LineFigure f : figures()) {
+            String n = f.badgeHit(p);                        // número de un grupo: elegir qué salida separa el botón #N
+            if (n != null) { e.selectSplit(f.id(), n); return false; }
             String b = f.hit(p);
             if (b == null) continue;
             // si este clic ya llegó como "arrastre" del botón SL/TP, no se repite (lo desarmaría)
@@ -603,6 +667,7 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
     }
 
     private volatile long lastBtnGripMs;
+    private volatile boolean splitDragged;       // el botón #N se ha llegado a arrastrar (no es un clic)
 
     @Override
     public void onBeginResize(ResizePoint rp, DrawContext dc) {
@@ -611,7 +676,7 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
             LineFigure f = g.line();
             f.dragging = true;
             lastBtnGripMs = System.currentTimeMillis();
-            if ("#".equals(g.btn)) eng().splitBegin(f.id());
+            if ("#".equals(g.btn)) { splitDragged = false; eng().splitBegin(f.id()); }
             else eng().pickBegin(f.id(), "SL".equals(g.btn));
             return;
         }
@@ -624,7 +689,12 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         if (rp instanceof LineFigure.BtnGrip) {
             LineFigure.BtnGrip g = (LineFigure.BtnGrip) rp;
             float px = rounded(dc, rp.getValue());
-            if ("#".equals(g.btn)) eng().splitMove(snap(g.line(), px, dc));   // la salida que se separa sigue al ratón
+            if ("#".equals(g.btn)) {
+                // la salida que se separa sigue al ratón; el imán incluye su propio grupo (volver a soltarla allí = no separar)
+                LineModel gm = g.line().model();
+                if (gm != null && Math.abs(dc.translateValue(px) - dc.translateValue(gm.price)) >= 8) splitDragged = true;
+                eng().splitMove(gm == null ? px : snapTo(gm.mergeKey, null, px, dc));
+            }
             else eng().hover(snapPlacing(dc, px));        // la vista previa del SL/TP sigue al ratón
             return;
         }
@@ -677,8 +747,10 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
             boolean moved = m != null && Math.abs(dc.translateValue(px) - dc.translateValue(m.price)) >= 8;
             if ("#".equals(g.btn)) {
                 // arrastre: la última salida del grupo sale y va a ese precio; clic: se separan todas
-                if (moved) eng().splitDrop(snap(f, px, dc));
+                // si se suelta otra vez encima del grupo, se pega a él y la salida se queda donde estaba
+                if (moved || splitDragged) eng().splitDrop(m == null ? px : snapTo(m.mergeKey, null, px, dc));
                 else { eng().splitDrop(Float.NaN); if (m != null) eng().lineButton(m.id, "#"); }
+                splitDragged = false;
             } else if (moved) eng().pickDrop(snapPlacing(dc, px));
             f.layout(dc);
             return;
@@ -816,11 +888,38 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
      * esté por encima. Devuelve true si el evento se consume.
      */
     static boolean fxMouse(MouseEvent ev) {
+        if (ev.getEventType() == MouseEvent.MOUSE_PRESSED) follow(ev);
         for (TradePanelStrategy s : LIVE) {
             Boolean r = s.fxMouseOne(ev);
             if (r != null) return r;
         }
         return false;
+    }
+
+    /**
+     * Como en DeepCharts, el panel sigue al gráfico en el que trabajas: al pulsar en el gráfico de otro
+     * activo con el Trade Panel activo, el panel pasa a ese activo (salvo con una colocación a medias).
+     */
+    private static void follow(MouseEvent ev) {
+        TradeEngine shown = PanelWindow.shown();
+        if (shown == null || shown.isArmed()) return;
+        for (TradePanelStrategy s : LIVE) {
+            TradeEngine e = s.eng();
+            if (e == shown || !e.isActive() || !s.onChart(ev)) continue;
+            PanelWindow.follow(e);
+            return;
+        }
+    }
+
+    /** ¿La pulsación cae dentro del área de precios de este gráfico? */
+    private boolean onChart(MouseEvent ev) {
+        Canvas cv = chartCanvas;
+        AffineTransform tx = chartTx;
+        DrawContext dc = lastDraw;
+        if (cv == null || tx == null || dc == null || !cv.isVisible() || cv.getScene() == null || cv.getScene() != sceneOf(ev)) return false;
+        Point2D p = toChart(cv, tx, ev.getSceneX(), ev.getSceneY());
+        Rectangle b = dc.getBounds();
+        return p != null && b != null && b.contains(p);
     }
 
     /** null = el evento no es de este gráfico (o no hay nada que hacer); true = consumirlo. */

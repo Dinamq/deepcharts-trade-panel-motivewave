@@ -33,6 +33,7 @@ final class LineModel {
     final List<Btn> buttons;
     final String mergeKey;      // salidas que se pueden agrupar entre sí (mismo tipo y lado); null si no
     final String badge;         // número de la entrada a la que pertenece ("1", "1·3" en un grupo) o null
+    final String badgeSel;      // en un grupo: número elegido para separar (se resalta), o null
 
     private LineModel(Builder b) {
         id = b.id; kind = b.kind; price = b.price; text = b.text; linked = b.linked; money = b.money;
@@ -40,6 +41,7 @@ final class LineModel {
         buttons = List.copyOf(b.buttons);
         mergeKey = b.mergeKey;
         badge = b.badge;
+        badgeSel = b.badgeSel;
     }
 
     static Builder of(String id, Kind kind, float price) { return new Builder(id, kind, price); }
@@ -48,7 +50,7 @@ final class LineModel {
         private final String id; private final Kind kind; private final float price;
         private String text = ""; private boolean linked; private String money; private Color color = Color.GRAY;
         private boolean draggable; private boolean dotted; private boolean closeAtRight; private String mergeKey;
-        private String badge;
+        private String badge, badgeSel;
         private final List<Btn> buttons = new ArrayList<>();
 
         private Builder(String id, Kind kind, float price) { this.id = id; this.kind = kind; this.price = price; }
@@ -61,6 +63,7 @@ final class LineModel {
         Builder closeAtRight(boolean c) { closeAtRight = c; return this; }
         Builder merge(String k) { mergeKey = k; return this; }
         Builder badge(String b) { badge = b; return this; }
+        Builder badgeSel(String s) { badgeSel = s; return this; }
         Builder btn(String t) { buttons.add(new Btn(t, false)); return this; }
         Builder btn(String t, boolean active) { buttons.add(new Btn(t, active)); return this; }
         LineModel build() { return new LineModel(this); }

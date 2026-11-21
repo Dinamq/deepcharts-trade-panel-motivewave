@@ -278,7 +278,7 @@ final class Config {
             strategies = List.copyOf(l);
             strategy = p.get("exitStrategy", "");
             if (find(strategy) == null) strategy = "";
-            if (qtyMode != QtyMode.QTY && (!riskReady() || multi() != null)) qtyMode = QtyMode.QTY;
+            if (qtyMode != QtyMode.QTY && !riskReady()) qtyMode = QtyMode.QTY;
         } catch (Exception ignore) { /* sin preferencias: valores por defecto */ }
     }
 
