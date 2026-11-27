@@ -1154,11 +1154,11 @@ final class TradeEngine {
                 }
                 if (execByAcct != null) {
                     Object list = execByAcct.invoke(null, acct, in);
-                    if (list instanceof List) hist = sumSince((List<?>) list, startOfToday());
+                    if (list instanceof List) hist = realizedSince((List<?>) list, startOfToday(), pointValue(c));
                 }
             }
         } catch (Throwable ignore) { }
-        // si el historial no trae P/L (o no se pudo leer), vale lo de la estrategia
+        // si el historial no se pudo leer (o aún no tiene la última ejecución), vale lo de la estrategia
         dayPnl = Double.isNaN(hist) || (hist == 0 && own != 0) ? own : hist;
         dayPnlAt = now;
         return dayPnl;
@@ -1169,23 +1169,47 @@ final class TradeEngine {
         return java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
-    /** Suma getPnl() de las ejecuciones con getTime() >= desde (las entradas aportan 0). */
-    static double sumSince(List<?> execs, long since) {
-        double sum = 0;
-        Method time = null, pnl = null;
+    /**
+     * P/L realizado desde {@code since} rehaciendo las ejecuciones en orden: cada compra o venta que reduce
+     * la posición cierra contra su precio medio. MotiveWave no guarda el P/L de cada ejecución con todos los
+     * brókers (con Rithmic queda a 0), así que se calcula con el precio y la cantidad, que sí están. Se recorre
+     * todo el historial para conocer la posición con la que empezó el día (una posición de ayer cerrada hoy
+     * cuenta hoy). NaN si no hay ninguna ejecución legible.
+     */
+    static double realizedSince(List<?> execs, long since, double pointValue) {
+        List<double[]> fills = new ArrayList<>();       // {tiempo, cantidad con signo, precio}
         for (Object e : execs) {
             if (e == null) continue;
             try {
-                if (time == null || !time.getDeclaringClass().isInstance(e)) {
-                    time = e.getClass().getMethod("getTime");
-                    pnl = e.getClass().getMethod("getPnl");
+                long t = ((Number) e.getClass().getMethod("getTime").invoke(e)).longValue();
+                boolean buy = (Boolean) e.getClass().getMethod("isBuy").invoke(e);
+                double q = ((Number) e.getClass().getMethod("getQuantity").invoke(e)).doubleValue();
+                double px = Double.NaN;
+                for (String g : new String[]{"getPrice", "getAvgPrice"}) {
+                    try { px = ((Number) e.getClass().getMethod(g).invoke(e)).doubleValue(); } catch (NoSuchMethodException ignore) { continue; }
+                    if (px > 0) break;
                 }
-                if (((Number) time.invoke(e)).longValue() < since) continue;
-                double v = ((Number) pnl.invoke(e)).doubleValue();
-                if (!Double.isNaN(v) && !Double.isInfinite(v)) sum += v;
+                if (q > 0 && px > 0 && !Double.isInfinite(px)) fills.add(new double[]{t, buy ? q : -q, px});
             } catch (Throwable ignore) { }
         }
-        return sum;
+        if (fills.isEmpty()) return Double.NaN;
+        fills.sort((a, b) -> Double.compare(a[0], b[0]));
+        double pos = 0, avg = 0, sum = 0;
+        for (double[] f : fills) {
+            double s = f[1], px = f[2], r = 0;
+            if (pos != 0 && (pos > 0) != (s > 0)) {
+                double close = Math.min(Math.abs(pos), Math.abs(s));
+                r = close * (px - avg) * Math.signum(pos) * pointValue;
+                double rest = Math.abs(s) - close;
+                if (Math.abs(pos) > close + 1e-9) pos += s;              // cierre parcial: el medio no cambia
+                else { pos = rest > 1e-9 ? Math.signum(s) * rest : 0; avg = rest > 1e-9 ? px : 0; }   // cierre total (o giro)
+            } else {
+                avg = (avg * Math.abs(pos) + px * Math.abs(s)) / (Math.abs(pos) + Math.abs(s));
+                pos += s;
+            }
+            if (f[0] >= since) sum += r;
+        }
+        return Math.round(sum * 100) / 100.0;
     }
 
     /**

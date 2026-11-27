@@ -88,7 +88,7 @@ import javafx.scene.input.MouseEvent;
 public class TradePanelStrategy extends Study implements TradeEngine.Host {
 
     /** Versión del Trade Panel (se muestra en los ajustes). Al publicar una versión nueva, subirla aquí. */
-    static final String VERSION = "1.0.2";
+    static final String VERSION = "1.0.3";
 
     private static final String BE_OFFSET     = "beOffset";
     private static final String RISK_EXACT    = "riskExact";
@@ -567,6 +567,13 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         return null;
     }
 
+    /** ¿Sobre un botón (SL, TP, X, #N) o un número de la insignia de alguna etiqueta? */
+    private boolean onButton(Point2D p) {
+        Point q = new Point((int) Math.round(p.getX()), (int) Math.round(p.getY()));
+        for (LineFigure f : figures()) if (f.hit(q) != null || f.badgeHit(q) != null) return true;
+        return false;
+    }
+
     // ------------------------------------------------------------------
     //  ratón
     // ------------------------------------------------------------------
@@ -592,7 +599,7 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         if (dc == null || !e.isActive()) return true;
         boolean shift = (flags & SHIFT_DOWN) != 0, ctrl = (flags & CTRL_DOWN) != 0, alt = (flags & ALT_DOWN) != 0;
         if (!e.wantsClick(shift, ctrl)) return true;
-        if (figureAt(p, dc) != null) return true;          // clic sobre una etiqueta: no es un precio
+        // colocando una orden, el clic sobre el cuerpo de una etiqueta también es un precio (sus botones ya se miraron arriba)
         Rectangle b = dc.getBounds();
         if (b != null && !b.contains(p)) return true;
         e.chartClick(snapPlacing(dc, (float) dc.translate2Value(p.getY())), shift, ctrl, alt);
@@ -916,11 +923,16 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         Canvas cv = chartCanvas;
         AffineTransform tx = chartTx;
         DrawContext dc = lastDraw;
-        if (cv == null || tx == null || dc == null || !cv.isVisible() || cv.getScene() == null || cv.getScene() != sceneOf(ev)) return false;
+        if (cv == null || tx == null || dc == null || !shownOn(cv, sceneOf(ev))) return false;
         Point2D p = toChart(cv, tx, ev.getSceneX(), ev.getSceneY());
         Rectangle b = dc.getBounds();
         return p != null && b != null && b.contains(p);
     }
+
+    /** Distancia máxima (px) entre pulsar y soltar para que cuente como clic y no como arrastre. */
+    private static final double CLICK_SLOP = 6;
+    private double pressX, pressY;              // dónde empezó nuestra pulsación (escena, solo hilo JavaFX)
+    private Point pressAt;                      // y en coordenadas del gráfico
 
     /** null = el evento no es de este gráfico (o no hay nada que hacer); true = consumirlo. */
     private Boolean fxMouseOne(MouseEvent ev) {
@@ -931,41 +943,82 @@ public class TradePanelStrategy extends Study implements TradeEngine.Host {
         Canvas cv = chartCanvas;
         AffineTransform tx = chartTx;
         DrawContext dc = lastDraw;
-        if (cv == null || tx == null || dc == null || cv.getScene() == null || cv.getScene() != sceneOf(ev)) return null;
+        if (cv == null || tx == null || dc == null || !shownOn(cv, sceneOf(ev))) return null;
         Point2D p = toChart(cv, tx, ev.getSceneX(), ev.getSceneY());
         Rectangle b = dc.getBounds();
         // dentro del área de precios de ESTE gráfico y no encima de un control (botones, campos…) de MotiveWave
-        boolean inside = p != null && b != null && b.contains(p) && cv.isVisible() && !onControl(ev);
+        boolean inside = p != null && b != null && b.contains(p) && !overControl(pickedNode(ev), cv);
         if (t == MouseEvent.MOUSE_MOVED || (t == MouseEvent.MOUSE_DRAGGED && !capturing)) {
             if (armed && inside) onHover(p, flags(ev), dc);     // la vista previa sigue al ratón (no se consume: cruz de MotiveWave)
             return null;
         }
         if (t == MouseEvent.MOUSE_PRESSED) {
             capturing = false; clickPending = false;
+            if (armed && p != null && b != null && b.contains(p) && !inside) {
+                javafx.scene.Node n = pickedNode(ev);
+                trace("clic con la orden armada sobre un control de MotiveWave (" + (n == null ? "?" : n.getClass().getSimpleName()) + "): no se coloca");
+            }
             if (!armed || !inside) return null;
             ownState();
-            if (figureAt(p, dc) != null) return null;          // sobre una etiqueta: la gestiona MotiveWave (arrastres)
+            if (onButton(p)) return null;                       // botón SL/TP/X/#N o número de una etiqueta: lo gestiona MotiveWave
             capturing = true;
+            pressX = ev.getSceneX(); pressY = ev.getSceneY();
+            pressAt = new Point((int) Math.round(p.getX()), (int) Math.round(p.getY()));
             if (ev.getButton() == MouseButton.SECONDARY) { e.disarm(); lastCancelMs = System.currentTimeMillis(); }   // clic derecho = cancelar, como en DeepCharts
             return true;
         }
         if (t == MouseEvent.MOUSE_CLICKED) {
             if (!clickPending) return null;
-            clickPending = false;
-            if (ev.getButton() == MouseButton.PRIMARY && ev.isStillSincePress() && p != null)
-                onClick(new Point((int) Math.round(p.getX()), (int) Math.round(p.getY())), flags(ev));
+            clickPending = false;                               // el clic ya se hizo al soltar
             return true;
         }
         if (!capturing) return null;
-        if (t == MouseEvent.MOUSE_RELEASED) { capturing = false; clickPending = true; }   // la pulsación termina aquí, salga o no el clic
-        return true;                                            // RELEASED / DRAGGED de una pulsación nuestra
+        if (t == MouseEvent.MOUSE_RELEASED) {
+            // el clic se hace al soltar (sin esperar a MOUSE_CLICKED, que JavaFX no manda si el ratón se ha
+            // movido un pelo): vale si no se ha desplazado más de unos píxeles desde que se pulsó
+            capturing = false; clickPending = true;
+            Point at = pressAt;
+            if (ev.getButton() == MouseButton.PRIMARY && at != null
+                && Math.hypot(ev.getSceneX() - pressX, ev.getSceneY() - pressY) <= CLICK_SLOP)
+                onClick(at, flags(ev));
+            return true;
+        }
+        return true;                                            // DRAGGED de una pulsación nuestra
     }
 
-    private static boolean onControl(MouseEvent ev) {
+    private static javafx.scene.Node pickedNode(MouseEvent ev) {
         javafx.scene.input.PickResult pr = ev.getPickResult();
-        for (javafx.scene.Node n = pr == null ? null : pr.getIntersectedNode(); n != null; n = n.getParent())
+        return pr == null ? null : pr.getIntersectedNode();
+    }
+
+    /**
+     * ¿El ratón está sobre un control de MotiveWave (botón, campo…) puesto encima del gráfico? Los controles
+     * que CONTIENEN al gráfico (pestañas, divisor de pantalla…) no cuentan: antes un gráfico dentro de una
+     * pantalla dividida se tomaba entero por "control" y su clic no se capturaba.
+     */
+    static boolean overControl(javafx.scene.Node picked, javafx.scene.Node chart) {
+        for (javafx.scene.Node n = picked; n != null; n = n.getParent()) {
+            if (n == chart || isAncestor(n, chart)) return false;     // ya estamos en el gráfico o en lo que lo contiene
             if (n instanceof javafx.scene.control.Control) return true;
+        }
         return false;
+    }
+
+    private static boolean isAncestor(javafx.scene.Node a, javafx.scene.Node n) {
+        for (javafx.scene.Node x = n == null ? null : n.getParent(); x != null; x = x.getParent()) if (x == a) return true;
+        return false;
+    }
+
+    /**
+     * ¿Ese canvas se está viendo en esa escena? Un gráfico en una pestaña no seleccionada sigue en la escena
+     * con su canvas "visible": hay que mirar también a sus contenedores (si no, el gráfico oculto podía
+     * quedarse con el clic del que se ve).
+     */
+    static boolean shownOn(javafx.scene.Node cv, javafx.scene.Scene sc) {
+        if (cv == null || sc == null || cv.getScene() != sc) return false;
+        for (javafx.scene.Node x = cv; x != null; x = x.getParent()) if (!x.isVisible()) return false;
+        javafx.stage.Window w = sc.getWindow();
+        return w == null || w.isShowing();
     }
 
     private static javafx.scene.Scene sceneOf(MouseEvent ev) {

@@ -160,6 +160,10 @@ final class LineFigure extends Figure {
     @Override public boolean isVisible(DrawContext dc) { return m != null; }
 
     @Override public boolean contains(double px, double py, DrawContext dc) {
+        // la vista previa sigue al ratón y su etiqueta queda debajo del cursor: nunca se queda con el clic
+        // (si no, el clic para colocar la orden a esa altura del gráfico se perdía)
+        LineModel mm = m;
+        if (mm == null || mm.kind == LineModel.Kind.PREVIEW) return false;
         if (onLabel(px, py)) return true;
         for (Rectangle r : btnRects) if (r != null && r.contains(px, py)) return true;
         Rectangle rx = rightX;

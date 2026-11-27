@@ -34,7 +34,20 @@
 
 ---
 
-## 🆕 What's new in v1.0.2
+## 🆕 What's new in v1.0.3
+
+Bug fixes for order placement and the daily P/L:
+
+- 🖱️ **No more lost clicks when placing an order.** Sometimes LMT / STP was pressed, the chart was clicked and nothing was placed, and only removing and re-adding the strategy seemed to help. The causes are fixed:
+  - the label of the dotted preview line, which follows the mouse, was taking the click;
+  - clicking on the label of an order already on the chart did nothing: now it places the new order at that price (its X / SL / TP / #N buttons still work as before);
+  - a chart inside tabs or a split screen could ignore the click, and a chart in a hidden tab could take it from the visible one;
+  - the click was lost if the mouse moved a pixel or two: now up to 6 px is accepted.
+- 📅 **Daily P/L that matches your broker.** With some brokers (Rithmic, for example) MotiveWave stores each fill with a P/L of 0, so the daily P/L still went back to 0 after re-activating. It is now rebuilt from the price and quantity of today's fills, per account and instrument, gross (without commissions). A position opened yesterday and closed today counts today.
+- 🏷️ The MotiveWave log now says why a click was ignored while an order was armed, to find any remaining case.
+
+<details>
+<summary><b>What's new in v1.0.2</b></summary>
 
 - 🔀 **Switch instruments from the panel:** the instrument dropdown now works. Activate the Trade Panel once on each instrument's chart and switch between them from the dropdown, or just click on a chart: the panel follows it, as in DeepCharts.
 - 🎯 **Exact risk in Risk mode:** the stop snaps to the price where the calculated contracts risk exactly your SL amount (for example 1500 $ instead of 1360 $). It can be turned off in the settings.
@@ -45,6 +58,8 @@
 - 💾 **Qty / Risk / Averaging is remembered** when you change the mode.
 - 🔵 **Split-screen charts** of the same instrument show up as mirrors (blue dot). A chart activated on another account says so on the chart.
 - 🏷️ **Version** shown in the strategy settings (*About*).
+
+</details>
 
 ## 🧭 Works like DeepCharts
 
@@ -102,7 +117,7 @@ MotiveWave rejects orders from strategies on *Trade Copier* accounts. Instead, a
 | 🛡️ **Breakeven & trailing** | BE button, auto BE, and a trailing stop with a draggable *Trail. Trigger* line. |
 | 🔗 **Order management** | Link pending orders, turn loose exits into an OCO, Cancel all, Cancel and Flat. |
 | 🔀 **Several instruments** | One panel for all your charts: it follows the chart you click, or pick the instrument in its dropdown. |
-| 📅 **Daily P/L** | Today's realized P/L for the account and instrument, read from MotiveWave's trade history. |
+| 📅 **Daily P/L** | Today's realized P/L for the account and instrument, rebuilt from MotiveWave's trade history (gross, without commissions). |
 | 🏷️ **Chart labels** | Entry numbers shared with their SL / TP. Exits at the same price are merged into one line and split again with #N. Optional R multiple and risk in money, %, ticks or points. |
 | 🚨 **Errors on the chart** | Orders not sent and broker rejections appear for a few seconds in a red box. |
 | 🌐 **Languages** | English and Spanish. |
@@ -134,7 +149,7 @@ Requirements:
 .\build.ps1 -NoInstall  # only build the jar
 ```
 
-The tests (`test/java/com/tradepanel/EngineTest.java`, 350+ checks) run the order engine against a simulated broker, without MotiveWave.
+The tests (`test/java/com/tradepanel/EngineTest.java`, 370+ checks) run the order engine against a simulated broker, without MotiveWave.
 
 <details>
 <summary><b>Project layout</b></summary>
@@ -178,6 +193,8 @@ Made by **Dinamq** (Gonzaliito). Released under the [MIT License](LICENSE).
 1. Descarga [`TradePanelDeepCharts.jar`](https://github.com/Dinamq/deepcharts-trade-panel-motivewave/releases/latest/download/TradePanelDeepCharts.jar).
 2. Cópialo en `%USERPROFILE%\MotiveWave Extensions` y reinicia MotiveWave.
 3. Añade la estrategia **Trade Panel (DeepCharts)** a un gráfico y pulsa **Activate**.
+
+Novedades de la v1.0.3: ya no se pierden clics al colocar una orden (la etiqueta de la vista previa se quedaba con el clic, un clic sobre la etiqueta de otra orden no colocaba nada, los gráficos en pestañas o con la pantalla dividida podían ignorarlo y bastaba con mover un poco el ratón), y el P/L diario se calcula con el precio y la cantidad de las ejecuciones del día, así que cuadra con el del bróker (sin comisiones) y no vuelve a 0 al reactivar.
 
 Novedades de la v1.0.2: el desplegable del activo cambia entre los gráficos con el Trade Panel activado (y el panel sigue al gráfico en el que pulsas), el modo Risk pone el stop donde se arriesga justo el importe, el P/L diario sale del historial de la cuenta y no se pierde al reactivar, se elige qué salida separar pulsando su número, el ajuste para desplazar el BE unos ticks a favor tiene un nombre más claro y los desplegables responden al primer clic.
 

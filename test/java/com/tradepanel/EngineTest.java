@@ -53,11 +53,15 @@ public final class EngineTest {
     }
 
     /** Ejecución del historial con los dos getters que lee el P/L diario. */
+    /** Ejecución del historial con los getters que lee el P/L diario (el P/L guardado a 0, como con Rithmic). */
     public static final class FakeExec {
-        private final long t; private final double p;
-        FakeExec(long t, double p) { this.t = t; this.p = p; }
+        private final long t; private final boolean buy; private final float q, px;
+        FakeExec(long t, boolean buy, float q, float px) { this.t = t; this.buy = buy; this.q = q; this.px = px; }
         public long getTime() { return t; }
-        public double getPnl() { return p; }
+        public boolean isBuy() { return buy; }
+        public float getQuantity() { return q; }
+        public float getPrice() { return px; }
+        public double getPnl() { return 0; }
     }
 
     private static void test(String name, Runnable r) {
@@ -1314,16 +1318,36 @@ public final class EngineTest {
             check("mismo activo: se conservan sus órdenes", n > 0 && e.eng.lines().size() == n);
         });
 
-        test("P/L diario: suma solo las ejecuciones de hoy del historial de la cuenta", () -> {
-            long hoy = TradeEngine.startOfToday();
+        test("P/L diario: se rehace con las ejecuciones del historial (como el closedPnl de Rithmic)", () -> {
+            long hoy = TradeEngine.startOfToday(), m = 60_000L;
+            // el caso real de la cuenta: MNQ (2 $/punto), dos operaciones de 4 contratos -> -20,96 $ (Rithmic: -21,0)
             List<FakeExec> h = new ArrayList<>();
-            h.add(new FakeExec(hoy - 3_600_000L, 500));      // ayer: no cuenta
-            h.add(new FakeExec(hoy + 60_000L, 0));           // entrada de hoy
-            h.add(new FakeExec(hoy + 120_000L, 37.5));       // salida de hoy
-            h.add(new FakeExec(hoy + 180_000L, -12.5));      // otra salida de hoy
+            h.add(new FakeExec(hoy - 600 * m, true, 3, 26000f));     // ayer: abre y cierra (no cuenta)
+            h.add(new FakeExec(hoy - 590 * m, false, 3, 26100f));
+            h.add(new FakeExec(hoy + 1 * m, true, 4, 26269f));
+            h.add(new FakeExec(hoy + 2 * m, false, 4, 26264.94f));
+            h.add(new FakeExec(hoy + 3 * m, true, 4, 26231.31f));
+            h.add(new FakeExec(hoy + 4 * m, false, 4, 26232.75f));
             h.add(null);
-            near("solo hoy", 25.0, TradeEngine.sumSince(h, hoy));
-            near("historial vacío", 0.0, TradeEngine.sumSince(new ArrayList<>(), hoy));
+            double r = TradeEngine.realizedSince(h, hoy, 2.0);   // precios float, como en MotiveWave: ±1 céntimo
+            check("las dos operaciones de hoy  (obtenido " + r + ")", Math.abs(r - (-20.96)) <= 0.011);
+
+            // posición abierta ayer y cerrada hoy: cuenta hoy, contra su precio de entrada
+            List<FakeExec> c = new ArrayList<>();
+            c.add(new FakeExec(hoy - 60 * m, false, 2, 100f));        // ayer: vende 2 a 100
+            c.add(new FakeExec(hoy + 5 * m, true, 2, 98f));           // hoy: recompra a 98 -> +2 x 2 x 2 $ = 8
+            near("cierre hoy de una posición de ayer", 8.0, TradeEngine.realizedSince(c, hoy, 2.0));
+
+            // promediar, cierre parcial y giro de largo a corto
+            List<FakeExec> g = new ArrayList<>();
+            g.add(new FakeExec(hoy + 1 * m, true, 1, 100f));
+            g.add(new FakeExec(hoy + 2 * m, true, 1, 102f));          // largo 2 a 101
+            g.add(new FakeExec(hoy + 3 * m, false, 1, 105f));         // cierra 1: +4 pts
+            g.add(new FakeExec(hoy + 4 * m, false, 3, 103f));         // cierra 1 (+2 pts) y queda corto 2 a 103
+            g.add(new FakeExec(hoy + 5 * m, true, 2, 104f));          // cierra el corto: -1 pt x 2
+            near("promediado, parcial y giro", (4 + 2 - 2) * 2.0, TradeEngine.realizedSince(g, hoy, 2.0));
+
+            check("historial vacío: sin dato (vale el de la estrategia)", Double.isNaN(TradeEngine.realizedSince(new ArrayList<>(), hoy, 2.0)));
             // sin historial de MotiveWave (simulador de pruebas) sigue valiendo el realizado de la estrategia
             Env e = new Env(100f);
             near("sin historial: el de la estrategia", e.sim.ctx.getTotalRealizedPnL(), e.eng.snapshot().dailyPnl);
